@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test tests/rules.test.ts tests/errors.test.ts tests/journey.test.ts",
+    "test": "node --experimental-strip-types --test tests/rules.test.ts tests/errors.test.ts tests/journey.test.ts tests/barber.test.ts tests/addons.test.ts",
     "templates": "node scripts/list-templates.mjs",
     "e2e": "node tests/e2e/flow.mjs"
   },

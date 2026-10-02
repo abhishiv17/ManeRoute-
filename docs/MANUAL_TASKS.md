@@ -29,6 +29,7 @@ Claude can do everything in the codebase. The items below need your accounts, yo
 | T10 | **Fill the `‹…›` placeholders** in [SUBMISSION.md](SUBMISSION.md) and submit on Devpost | Before 2 Nov 2026, 11:45 am ET | Aim to submit a few days early |
 | T11 | **Keep the demo running** until judging ends, with enough units | Through judging | Consider raising `MAX_TASKS_PER_HOUR` or topping up units |
 | T14 | **Try the texture scan yourself** on the camera: front, then turn right, then left (3-second timer, hands-free) | Now | The only path Claude could not verify with sample photos, because it needs real side angles of a person |
+| T15 | **Run the hair check yourself once**: right, left, then head lowered about halfway | Now | Frizz and density were built from YouCam's API spec and their request shapes were confirmed, but they haven't had a successful call with real photos of a person. Check the route's "Why" lists your frizz and density |
 | T12 | **Rotate your YouCam key** after the hackathon | After results | It's been used on your laptop and will be in Vercel |
 
 ## C. Things to be aware of

@@ -90,10 +90,10 @@ await page.getByRole("button", { name: "Try it on" }).click();
 await waitForTryOn();
 await page.waitForTimeout(500);
 await shot("tryon-2");
-expect((await page.locator(".strip button").count()) === 2, "both looks kept in the strip");
+expect((await page.locator(".look-grid button.look-tile:not(.add)").count()) === 2, "both looks kept in the lookbook");
 
 step("plan");
-await page.locator(".strip button", { hasText: "Grown-out waves" }).click();
+await page.locator(".look-grid button.look-tile", { hasText: "Grown-out waves" }).click();
 await page.getByRole("button", { name: "Calculate my route" }).click();
 await page.getByText("What matters to you.").waitFor();
 if ("scan-fail" in args) {

@@ -14,7 +14,7 @@ ManeRoute
 From the hair you have to the hair you want.
 
 ## Built with
-Next.js, React, TypeScript, YouCam AI Hair Length Detection, YouCam AI Hair Type Detection, YouCam AI Hairstyle Virtual Try-On, YouCam AI Hair Extension, YouCam File API, IndexedDB, Web Share API, Canvas, PWA, Vercel
+Next.js, React, TypeScript, YouCam AI Hair Length Detection, YouCam AI Hair Type Detection, YouCam AI Hairstyle Virtual Try-On, YouCam AI Hair Extension, YouCam AI Beard Style Generator, YouCam AI Bangs, YouCam AI Hair Color, YouCam AI Hair Frizziness Detection, YouCam AI Hair Density Detection, YouCam File API, IndexedDB, Web Share API, Canvas, PWA, Vercel
 
 ## Inspiration
 Most bad haircuts aren't bad cutting. They're a bad conversation. People hand their barber or stylist an inspiration photo, but the photo can't say *"I'm not willing to grow it out"*, *"no perms"*, *"I need something I can style in five minutes"*, or *"my hair is nowhere near that long."* In a 2023 survey of 2,000 UK salon clients, 45% had been disappointed with an appointment outcome in the past year and a third felt their stylist didn't listen.
@@ -27,13 +27,13 @@ ManeRoute is a mobile-first web app (PWA) that turns a hairstyle goal into a rou
 **1. Consult (`/consult`)**
 1. **Your photo.** A live camera with a framing guide, a 3-second timer and a lighting hint, or an upload.
 2. **Your starting point, from YouCam AI Hair Length Detection.** It runs in the background while you browse. ManeRoute keeps YouCam's category, including "or longer" uncertainty, instead of inventing centimetres.
-3. **58 cuts, tried on your own face with YouCam AI Hairstyle Virtual Try-On.** Men's, Women's or All lists, chosen by you and never guessed from your photo. Every try-on is kept in a full-width before/after slider so you can compare.
-4. **A transparent route.** A rule engine returns *Ready for your next appointment*, *Grow it out first*, *Cut it shorter* or *Check with your stylist first*, with every rule that fired shown by id and a plain sentence. No made-up percentages. It adds the cuts to ask for along the way and, from short hair up, **your own hair grown out** with YouCam AI Hair Extension. An optional three-angle scan with YouCam AI Hair Type Detection makes the route texture-aware.
-5. **A document for the chair.** One page with your photo, the previews, the YouCam length result, your limits, the reasons and questions for your stylist. Edit the questions, add a note, then share, download, copy or save it to **My plans**.
+3. **58 cuts, tried on your own face with YouCam AI Hairstyle Virtual Try-On.** A photo grid in Men's, Women's or All lists, chosen by you and never guessed from your photo, sorted by your measured length into *Ready now*, *Grow one stage* and *Big change*. Each try-on wipes onto your face in a full-width before/after slider, and every look collects in a lookbook so you can compare three or four side by side. **Finish the look** on top of the cut with **YouCam AI Beard Style Generator** (15 beards, from clean-shaven to Garibaldi), **YouCam AI Bangs** (10 fringes per list) and **YouCam AI Hair Color** (9 colours), each with what to ask for in the chair.
+4. **A route you can see.** Your own face at every stop on a painted road: now → along the way → your hair grown → the destination. A rule engine returns *Ready for your next appointment*, *Grow it out first*, *Cut it shorter* or *Check with your stylist first*, with every rule that fired shown by id and a plain sentence. No made-up percentages. It adds the cuts to ask for along the way and, from short hair up, **your own hair grown out** with YouCam AI Hair Extension. An optional **hair check** (three hands-free photos) runs **YouCam AI Hair Type Detection**, **Hair Frizziness Detection** and **Hair Density Detection**: the route flags, for example, that layered cuts thin out fine hair or that a sleek finish fights frizz, and the routine adds anti-frizz or volume steps.
+5. **A document for the chair.** One page with your photo, the previews, the YouCam length result, **what to ask for in barber language** (for example "a grown-in wavy cut to the jaw: long layers, ends point-cut so the waves separate"), in order from the next appointment to the destination, your limits and questions for your stylist. Edit the questions, add a note, then share, download, copy or save it to **My plans**.
 
 **2. Walk the road (`/journey`)**
 - **Start my journey** turns the document into a road whose stops carry the YouCam previews, with Rou the mascot standing where you are.
-- **Check-ins:** every few weeks one new photo is measured again by Hair Length Detection. You move along the road when your length band changes or when you log the cut. Your pace comes from your own measurements and is never predicted.
+- **Check-ins:** every few weeks one new photo is measured again by Hair Length Detection, and Hairstyle Try-On **re-renders the destination on that photo**, next to the day-1 render, so progress is visible even before the length band changes. You move along the road when your length band changes or when you log the cut. Your pace comes from your own measurements and is never predicted.
 - **A haircare routine** from six taps: daily, wash-day, weekly, monthly and this-stage steps, each with the rule (RT1–RT15) and reason behind it, and a checklist with a streak.
 - **Trims and reminders:** log a cut and the next trim is planned; **Add reminders to my calendar** downloads an `.ics` file.
 
@@ -64,7 +64,7 @@ Everything a user creates stays in their browser. ManeRoute's server stores noth
 - **Blocked CDN.** On one test network the template thumbnail CDN was blocked by the ISP, so the picker serves pictures locally.
 
 ## Accomplishments we're proud of
-- Four YouCam AI APIs, each making a different decision: where you are, what the target looks like on you, what your own hair looks like longer, and whether your texture suits the look.
+- Nine YouCam AI APIs, each with a job: where you are (length), what the target looks like on you (try-on), your own hair longer (extension), the whole barbershop look (beard, fringe, colour), and what your hair is like (texture, frizz, density). Try-On is used twice: to choose the destination, and again at every check-in to show it getting closer.
 - The route is fully explainable: anyone can read *why* on one screen.
 - The document is useful on its own. A stylist who has never seen the app understands it.
 - It doesn't end at a try-on: the journey gives a reason to come back, measured by the same API.
@@ -73,24 +73,29 @@ Everything a user creates stays in their browser. ManeRoute's server stores noth
 ‹Fill in with your own learnings, e.g. from user interviews in docs/INTERVIEWS.md›
 
 ## What's next
-A stylist view where the barber can reply with notes, beard targets for barbershops, and an optional account to keep journeys across devices.
+A stylist view where the barber can reply with notes, beard routes (YouCam has no beard length measurement yet, so beards are a style choice today, not a tracked journey), and an optional account to keep journeys across devices.
 
 ## YouCam APIs used (exact)
 | API | Endpoint | Purpose |
 | --- | --- | --- |
 | File API | `POST /s2s/v2.0/file` | Register and upload the user photo |
 | AI Hair Length Detection v1.0 | `POST/GET /s2s/v2.0/task/hair-length-detection` | Starting length, and every journey check-in |
-| AI Hairstyle Virtual Try-On v2.1 | `POST/GET /s2s/v2.1/task/hair-transfer` | Target and along-the-way previews |
+| AI Hairstyle Virtual Try-On v2.1 | `POST/GET /s2s/v2.1/task/hair-transfer` | Target and along-the-way previews, and the destination re-rendered at every journey check-in |
 | Hairstyle templates v2.1 | `GET /s2s/v2.1/task/template/hair-transfer` | Curating the 58-cut catalog |
 | AI Hair Type Detection v1.0 | `POST/GET /s2s/v2.0/task/hair-type-detection` | Natural texture from a 3-angle scan; drives rule R6 and the routine |
 | AI Hair Extension VTO v1.0 | `POST/GET /s2s/v2.0/task/hair-ext` | "Your hair, grown" preview on grow-out routes, from short hair up |
+| AI Beard Style Generator | `POST/GET /s2s/v2.0/task/beard-style` (+ template list) | 15 beards on top of the haircut try-on |
+| AI Bangs | `POST/GET /s2s/v2.0/task/hair-bang` (+ template list) | 20 fringes on top of the try-on |
+| AI Hair Color | `POST/GET /s2s/v2.0/task/hair-color` | 9 colours on top of the try-on |
+| AI Hair Frizziness Detection | `POST/GET /s2s/v2.0/task/hair-frizziness-detection` | Frizz grade from the hair-check photos; drives R8 and RT16 |
+| AI Hair Density Detection | `POST/GET /s2s/v2.0/task/hair-density-detection` | Density grade from a head-lowered photo; drives R7 and RT17 |
 
 ## Work completed during the submission period
 The initial MVP was created on 28 Sep 2026, before the window opened. Significant work since 29 Sep 2026, 12:00 pm ET (details in CHANGELOG.md):
 - **29 Sep:** the MVP rebuilt after an honest product review (start → pick → try-on → route → document), refresh-safe sessions that resume YouCam tasks, the "mullet" grow-out fix with two-stage routes, Men's / Women's / All lists, and a full visual redesign.
 - **30 Sep:** the "painted road" visual identity across every screen, the document and the shared image.
 - **1 Oct:** **My journey**: check-ins measured by YouCam, a road with the previews, a routine engine (RT1–RT15) with a daily checklist and streaks, trim planning and calendar reminders. Rou redesigned as a full-body mascot.
-- **2 Oct:** one plain name per route on every screen, an on-screen explanation when the grown-out preview is skipped, a service-worker fix for development, simulated try-ons clearly labelled, and a full live audit of every feature with real YouCam calls.
+- **2 Oct:** "finish the look" with beard, fringe and colour on top of the try-on (YouCam Beard Style Generator, Bangs, Hair Color), and a three-photo hair check adding YouCam Hair Frizziness and Hair Density Detection to the route and routine. Also a redesign around the try-on: a photo-grid catalog sorted into Ready now / Grow one stage / Big change, a full-width try-on with a wipe reveal and a lookbook, the route as a road with your face at every stop, barber-ready scripts for all 58 cuts on the route and the document, and the destination re-rendered at every journey check-in. Also: one plain name per route on every screen, an on-screen explanation when the grown-out preview is skipped, a service-worker fix for development, simulated try-ons clearly labelled, and a full live audit of every feature with real YouCam calls.
 
 ## Links
 - Live demo: ‹https://… (Vercel URL)›
@@ -105,7 +110,7 @@ The initial MVP was created on 28 Sep 2026, before the window opened. Significan
 5. Tap **Start my journey**, build the routine, tick a step, then **Check in** with another photo and **Add reminders to my calendar**.
 6. Open **My plans** to reopen the saved document. The delete buttons on each page remove everything.
 
-A consultation uses about 4–9 YouCam units from our key (more with the texture scan), and each check-in about 1.
+A consultation uses about 4–9 YouCam units from our key (more with the texture scan), and each check-in about 4.
 
 ---
 

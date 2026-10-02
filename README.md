@@ -22,16 +22,16 @@ ManeRoute shows the **route**, and then walks it with you.
 | Step | What happens | Powered by |
 | --- | --- | --- |
 | **You** | One photo with a framing guide, a 3-second timer and a light hint, or an upload | Camera API |
-| **Pick** | Your current length is measured in the background while you browse 58 cuts (Men's, Women's or All: you choose, nothing is guessed from your photo) | YouCam **Hair Length Detection** |
-| **Try on** | Each cut on your own face, in a full-width before/after slider. Try as many as you like and compare | YouCam **Hairstyle Virtual Try-On** |
-| **Route** | A plain answer (*Ready for your next appointment*, *Grow it out first*, *Cut it shorter*, *Check with your stylist first*) with the reasons behind it, the cuts to ask for along the way, and, once your hair is at least short, **your own hair, grown out**. An optional texture scan makes the advice texture-aware | YouCam **Hair Extension**, **Hair Type Detection** |
-| **Document** | A one-page card for the chair: edit the questions, add a note, then share it, download it or save it to **My plans** | Canvas, Web Share API |
+| **Pick** | Your current length is measured in the background while you browse 58 cuts in a photo grid (Men's, Women's or All: you choose, nothing is guessed from your photo). Once measured, the cuts sort into **Ready now**, **Grow one stage** and **Big change** | YouCam **Hair Length Detection** |
+| **Try on** | Each cut wipes onto your own face in a full-width before/after slider. Every look collects in a **lookbook** to compare side by side, with suggestions to try next. **Finish the look** on top of the cut: 15 beard styles (Men's and All lists), 10 fringes and 9 colours, each with what to ask for | YouCam **Hairstyle Virtual Try-On**, **Beard Style Generator**, **Bangs**, **Hair Color** |
+| **Route** | Your face at every stop on a painted road (now → along the way → grown → destination). A plain answer (*Ready for your next appointment*, *Grow it out first*, *Cut it shorter*, *Check with your stylist first*) with the reasons behind it, the cuts to ask for along the way, and, once your hair is at least short, **your own hair, grown out**. An optional **hair check** (three hands-free photos) reads texture, frizz and density, and the route and routine use them | YouCam **Hair Extension**, **Hair Type Detection**, **Hair Frizziness Detection**, **Hair Density Detection** |
+| **Document** | A one-page card for the chair with **what to ask for, in barber language** and in order (next appointment first), then your questions and a note. Share it, download it or save it to **My plans** | Canvas, Web Share API |
 
 ### 2. Walk the road (`/journey`)
 Press **Start my journey** on the document and the plan becomes a journey:
 
 - **The road.** Every stop shows its AI preview: where you started → along-the-way cuts → your hair grown → the destination. Rou stands where you are.
-- **Check-ins.** Every few weeks you take one new photo, and YouCam measures your length again. You move along the road when your length band changes or when you log the cut. Progress never goes backwards.
+- **Check-ins.** Every few weeks you take one new photo. YouCam measures your length again, and Hairstyle Try-On **re-renders your destination on that photo**, so you see it fitting your own hair a little better each time, side by side with the day-1 render. You move along the road when your length band changes or when you log the cut. Progress never goes backwards.
 - **Your pace.** Worked out from your own measurements ("1 band longer in 9 weeks"), never predicted.
 - **Photo history.** A slider between your first and latest photo, plus a log of every check-in and cut.
 - **Haircare routine.** Six tap-to-answer questions (texture is skipped when the YouCam scan already measured it) give you a **daily, wash-day, weekly, monthly and this-stage** routine. Every step shows the rule that produced it and why. Products are named by type ("sulfate-free, colour-safe shampoo"), never by brand.
@@ -48,10 +48,15 @@ Saved consultation documents, grouped by month, kept on your device.
 | File API | `POST /s2s/v2.0/file` → `PUT` presigned URL | Registering photos |
 | AI Hair Length Detection v1.0 | `/s2s/v2.0/task/hair-length-detection` | Your starting length, and every journey check-in |
 | AI Hair Type Detection v1.0 | `/s2s/v2.0/task/hair-type-detection` | Natural texture (straight → coily) from three angles, for the route and the routine |
-| AI Hairstyle Virtual Try-On v2.1 | `/s2s/v2.1/task/hair-transfer` | The target and along-the-way previews |
+| AI Hairstyle Virtual Try-On v2.1 | `/s2s/v2.1/task/hair-transfer` | The target and along-the-way previews, and the destination re-rendered at every check-in |
 | AI Hair Extension VTO v1.0 | `/s2s/v2.0/task/hair-ext` | "Your hair, grown" preview |
+| AI Beard Style Generator | `/s2s/v2.0/task/beard-style` | 15 beard styles on top of the haircut try-on |
+| AI Bangs | `/s2s/v2.0/task/hair-bang` | 20 fringes (10 Men's, 10 Women's) on top of the try-on |
+| AI Hair Color | `/s2s/v2.0/task/hair-color` | 9 colours on top of the try-on |
+| AI Hair Frizziness Detection | `/s2s/v2.0/task/hair-frizziness-detection` | Frizz from the hair-check photos, for rule R8 and routine step RT16 |
+| AI Hair Density Detection | `/s2s/v2.0/task/hair-density-detection` | Density from a head-lowered photo, for rule R7 and routine step RT17 |
 
-All calls go through Next.js route handlers on the server, and the API key never reaches the browser. Tasks are polled, and a refresh resumes them instead of paying again. A full consultation with a texture scan uses about 8–9 units, and each check-in about 1. Details: [docs/YOUCAM_APIS.md](docs/YOUCAM_APIS.md).
+All calls go through Next.js route handlers on the server, and the API key never reaches the browser. Tasks are polled, and a refresh resumes them instead of paying again. A full consultation with a texture scan uses about 8–9 units, and each check-in about 4 (a length measurement plus the destination re-render). Details: [docs/YOUCAM_APIS.md](docs/YOUCAM_APIS.md).
 
 ## Honest by design
 
@@ -94,7 +99,7 @@ The camera needs HTTPS on a real phone (localhost works on a laptop). Use a depl
 ## Testing
 
 ```bash
-npm test             # 39 unit tests: route rules, routine rules, journey progress, calendar, YouCam normalization, errors
+npm test             # 52 unit tests: route rules, barber scripts, beard/fringe/colour, hair checks, routine rules, journey progress, calendar, YouCam normalization, errors
 npm run typecheck
 npm run build        # NEXT_DIST_DIR=.next-check npm run build works while `npm run dev` is running
 npm run e2e -- --size=phone    # real-browser walk-through with REAL YouCam calls (~7 units)
@@ -154,4 +159,4 @@ Next.js 16 · React 19 · TypeScript · YouCam AI APIs · IndexedDB · Canvas ·
 
 ## Third-party assets
 
-Style pictures in `public/styles/` are YouCam template thumbnails, or previews generated with YouCam Hairstyle VTO on YouCam's sample model photos, used to pick the matching template. `tests/e2e/fixtures/front.jpg` is one of those sample photos. There are no other third-party images, fonts or music.
+Style pictures in `public/styles/` are YouCam template thumbnails, or previews generated with YouCam Hairstyle VTO on YouCam's sample model photos, used to pick the matching template. `tests/e2e/fixtures/front.jpg` is one of those sample photos. Beard and fringe pictures in `public/addons/` are YouCam's own template thumbnails (from the beard-style and hair-bang template lists), used to choose those templates. There are no other third-party images, fonts or music.

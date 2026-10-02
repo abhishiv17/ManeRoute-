@@ -105,6 +105,60 @@ GET  /s2s/v2.0/task/hair-ext/{task_id}     → results.url
 - The template keeps the user's own cut and colour and adds length. Checked visually on 28 Sep 2026: `all_length_1` reaches chest length, and `all_length_2_` and `all_length_3` fall well below the chest.
 - ManeRoute maps a medium target to `all_length_1` and a long target to `all_length_2_`. Cost: 1 unit.
 
+## 7. AI Beard Style Generator ("finish the look")
+
+```http
+GET  /s2s/v2.0/task/template/beard-style   → 15 templates: all_shaved, all_goatee, all_circle, all_anchor, …
+POST /s2s/v2.0/task/beard-style            { "src_file_id": "<image>", "template_id": "all_goatee" }
+GET  /s2s/v2.0/task/beard-style/{task_id}  → results.url
+```
+
+- Applied to the **haircut try-on result**, not the original photo: the browser re-uploads the try-on image (cropped to 640 × 800) and runs the beard on it, so the user sees the whole barbershop look. Photo limits: long side under 1024 px, face width over 256 px, head turned less than 30°.
+- Template ids, names and the barber wording for each are in `lib/addons.ts`; thumbnails are kept in `public/addons/beard/`.
+
+## 8. AI Bangs (fringe) Generator
+
+```http
+GET  /s2s/v2.0/task/template/hair-bang   → 20 templates: male_* (10) and female_* (10)
+POST /s2s/v2.0/task/hair-bang            { "src_file_id": "<image>", "template_id": "male_wispy_bangs" }
+GET  /s2s/v2.0/task/hair-bang/{task_id}  → results.url
+```
+
+- The Men's list uses the `male_` set, Women's and All the `female_` set. Thumbnails in `public/addons/bangs/`.
+
+## 9. AI Hair Color Virtual Try-On
+
+```http
+POST /s2s/v2.0/task/hair-color   { "src_file_id": "<image>", "pattern": { "name": "full" }, "palettes": [{ "color": "#3a2a20" }] }
+GET  /s2s/v2.0/task/hair-color/{task_id}  → results.url  (returned as PNG)
+```
+
+- `pattern.name` is `full` or `ombre` (ombre takes two palettes plus `blend_strength`, `line_offset`, `coloring_section`); palettes accept `color_intensity` and `shine_intensity` (0–100). There are no templates (`GET …/template/hair-color` is empty). Cost: 1 unit.
+- ManeRoute offers nine named colours with salon wording (`COLOURS` in `lib/addons.ts`). Results (colour comes back as PNG) are typed from the file's first bytes in `fetchResultImage`, so a missing or generic content type can't break re-using the image for the next finish.
+
+## 10. AI Hair Frizziness Detection (part of the hair check)
+
+```http
+POST /s2s/v2.0/task/hair-frizziness-detection   { "src_file_ids": ["<front>", "<left>", "<right>"] }
+GET  /s2s/v2.0/task/hair-frizziness-detection/{task_id}
+→ results.hair_frizziness = { "term": "Not Frizzy" | "Slightly Frizzy" | "Frizzy" | "Extreme Frizzy", "mapping": 0–3 }
+```
+
+- Uses the same three photos as the texture scan (front, left, right). ManeRoute maps the terms to low / medium / high / high (`lib/hairCheck.ts`). "High" adds rule R8 on sleek straight looks and routine step RT16.
+
+## 11. AI Hair Density Detection (part of the hair check)
+
+```http
+POST /s2s/v2.0/task/hair-density-detection   { "src_file_id": "<head-lowered photo>" }
+GET  /s2s/v2.0/task/hair-density-detection/{task_id}
+→ results.hair_density = { "term": "Extremely Low Density" | "Low Density" | "Medium Density" | "High Density", "mapping": "2.16" }
+```
+
+- Needs its **own photo**: face the camera, then lower the head about 45° with the hairline in view and hair untied. A normal front photo fails with `error_face_angle_invalid` (checked 2 Oct 2026), so the hair check's third camera shot is "lower your head".
+- Low → rule R7 (fewer, longer layers on layered cuts) and routine step RT17; high → R7 on one-length shapes.
+
+Request shapes for sections 7–11 were confirmed with live calls on 2 Oct 2026; the result shapes and photo rules come from YouCam's OpenAPI files (mirrored at github.com/api-evangelist/perfect-corp, because the docs host is blocked on our network). Successful beard, fringe and colour results were checked visually. Density and frizz have not yet had a successful call with real photos of a person (see MANUAL_TASKS T15).
+
 ## Units per consultation
 
 | Step | Units |
@@ -115,6 +169,16 @@ GET  /s2s/v2.0/task/hair-ext/{task_id}     → results.url
 | Planning-stage preview (gap of two or more bands) | 2 |
 | Your cut, grown (Hair Extension, length-building routes) | 1 |
 | **Total** | **4–9** |
+
+## Units per journey check-in
+
+| Step | Units |
+| --- | --- |
+| Hair Length Detection on the new photo | 2 |
+| The destination re-rendered on the new photo (Hairstyle VTO) | 2 |
+| **Total** | **about 4** |
+
+The two run in parallel on the same uploaded file. If the re-render fails, the measurement is still saved.
 
 ## Data retention (YouCam side)
 
