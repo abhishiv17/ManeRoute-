@@ -4,13 +4,16 @@ import { useCallback, useState } from "react";
 import CameraCapture, { type Pose } from "@/components/CameraCapture";
 import Mascot, { type MascotMood } from "@/components/Mascot";
 import Measure, { distanceLabel } from "@/components/route/Measure";
-import HairTimeline, { type Stop } from "@/components/route/HairTimeline";
+import RoadStrip, { type RoadStop } from "@/components/route/RoadStrip";
+import ChairSteps from "@/components/route/ChairSteps";
+import { chairPlan } from "@/lib/barber";
 import Interrupt from "@/components/route/Interrupt";
 import { TEXTURE_GROUP_LABELS } from "@/lib/texture";
 import type { HairBaseline, HairTexture, Preferences, TargetStyle, TransitionRoute } from "@/lib/types";
 import type { ApiFailure } from "@/lib/client/api";
 import { CaptureError, preparePhoto, type PreparedPhoto } from "@/lib/client/image";
-import { Seg, zoom, shortBand, type Preview } from "./shared";
+import { Seg, zoom, shortBand, type CheckState, type Preview } from "./shared";
+import { finishSteps, type Finish } from "@/lib/addons";
 
 export type TextureState =
   | { state: "none" }
@@ -28,25 +31,10 @@ const MOOD: Record<TransitionRoute["route"], MascotMood> = {
 
 const img = (p: Preview) => (p.state === "success" ? p.image : null);
 
-function Thumb({ src, label, pending }: { src: string | null; label: string; pending?: boolean }) {
-  if (src) {
-    return (
-      <button className="textbtn" style={{ padding: 0, textDecoration: "none" }} onClick={() => zoom(src, label)} aria-label={`Enlarge ${label}`}>
-        <img className="wp-img" src={src} alt={label} />
-      </button>
-    );
-  }
-  return pending ? (
-    <div style={{ maxWidth: 280 }}>
-      <div className="wp-img" style={{ display: "grid", placeItems: "center" }}><span className="mono muted">Rendering…</span></div>
-      <div className="loader-line" />
-    </div>
-  ) : null;
-}
-
-function TextureCheck({ texture, onScan }: { texture: TextureState; onScan: (right: PreparedPhoto, left: PreparedPhoto) => void }) {
+function TextureCheck({ texture, frizz, density, textureMatters, onScan }: { texture: TextureState; frizz: CheckState; density: CheckState; textureMatters: boolean; onScan: (right: PreparedPhoto, left: PreparedPhoto, down?: PreparedPhoto) => void }) {
   const [pose, setPose] = useState<Pose | null>(null);
   const [right, setRight] = useState<PreparedPhoto | null>(null);
+  const [left, setLeft] = useState<PreparedPhoto | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const onFallback = useCallback((reason: string) => {
     setPose(null);
@@ -64,7 +52,7 @@ function TextureCheck({ texture, onScan }: { texture: TextureState; onScan: (rig
   if (pose) {
     return (
       <section style={{ padding: "18px 0", borderTop: "2px dashed var(--line)" }}>
-        <div className="kicker"><span>Texture check</span><span>{pose === "right" ? "01 / 02" : "02 / 02"}</span></div>
+        <div className="kicker"><span>Hair check</span><span>{pose === "right" ? "01 / 03" : pose === "left" ? "02 / 03" : "03 / 03"}</span></div>
         <CameraCapture
           key={pose}
           pose={pose}
@@ -77,9 +65,12 @@ function TextureCheck({ texture, onScan }: { texture: TextureState; onScan: (rig
             if (pose === "right") {
               setRight(p);
               setPose("left");
+            } else if (pose === "left") {
+              setLeft(p);
+              setPose("down");
             } else {
               setPose(null);
-              if (right) onScan(right, p);
+              if (right && left) onScan(right, left, p);
             }
           }}
         />
@@ -87,26 +78,38 @@ function TextureCheck({ texture, onScan }: { texture: TextureState; onScan: (rig
     );
   }
 
+  const reading = (label: string, c: CheckState) =>
+    c.state === "done" ? (
+      <div style={{ marginTop: 4 }}>{label}: <b>{c.reading.term}</b></div>
+    ) : c.state === "running" ? (
+      <div className="mono muted" style={{ marginTop: 4 }}>Reading {label.split(" · ")[0].toLowerCase()}…</div>
+    ) : c.state === "error" ? (
+      <div className="mono muted" style={{ marginTop: 4 }}>{label.split(" · ")[0]}: not read ({c.message})</div>
+    ) : null;
+
   if (texture.state === "done") {
     return (
       <div className="note ok">
-        <div className="mono">Texture measured · YouCam Hair Type</div>
-        <b>{TEXTURE_GROUP_LABELS[texture.texture.group]}</b> · “{texture.texture.term}”. The route above uses it.
+        <div className="mono">Hair check · YouCam</div>
+        Texture: <b>{TEXTURE_GROUP_LABELS[texture.texture.group]}</b> · “{texture.texture.term}”. The route and your routine use it.
+        {reading("Frizz · YouCam Hair Frizziness Detection", frizz)}
+        {reading("Density · YouCam Hair Density Detection", density)}
       </div>
     );
   }
 
   return (
     <section style={{ padding: "18px 0", borderTop: "2px dashed var(--line)" }}>
-      <div className="kicker"><span>Optional</span><span>+2 photos</span></div>
-      <h2 className="display h3" style={{ margin: "6px 0 8px" }}>Does it suit your texture?</h2>
+      <div className="kicker"><span>Optional</span><span>+3 photos</span></div>
+      <h2 className="display h3" style={{ margin: "6px 0 8px" }}>{textureMatters ? "Does it suit your texture?" : "Check your hair"}</h2>
       <p className="small">
-        This look depends on texture. Two side photos (a hands-free 3-second timer each) let YouCam Hair Type Detection
-        read yours, and the route will say whether the look will sit like the preview.
+        {textureMatters ? "This look depends on texture. " : ""}Three hands-free photos (head turned right, then left, then
+        lowered; a 3-second timer each) let YouCam read your <b>texture</b>, <b>frizz</b> and <b>density</b>. The route
+        flags what matters for this cut, and your routine uses them.
       </p>
       {texture.state === "running" && (
         <>
-          <p className="mono">Reading your texture…</p>
+          <p className="mono">Reading your texture, frizz and density…</p>
           <div className="loader-line" />
         </>
       )}
@@ -118,7 +121,7 @@ function TextureCheck({ texture, onScan }: { texture: TextureState; onScan: (rig
         <div className="btn-row">
           <button className="cta ghost" onClick={() => { setErr(null); setPose("right"); }}>Scan with camera</button>
           <label className="cta ghost" style={{ cursor: "pointer" }}>
-            Upload 2 side photos
+            Upload 3 photos
             <input
               type="file"
               accept="image/*"
@@ -127,9 +130,10 @@ function TextureCheck({ texture, onScan }: { texture: TextureState; onScan: (rig
               onChange={async (e) => {
                 const files = Array.from(e.target.files || []);
                 e.target.value = "";
-                if (files.length !== 2) return setErr("Choose exactly two photos: head turned right, then left.");
-                const [r, l] = await Promise.all(files.map(prep));
-                if (r && l) onScan(r, l);
+                if (files.length !== 2 && files.length !== 3)
+                  return setErr("Choose two or three photos: head turned right, then left, then (for density) lowered.");
+                const [r, l, d] = await Promise.all(files.map(prep));
+                if (r && l) onScan(r, l, d ?? undefined);
               }}
             />
           </label>
@@ -143,6 +147,9 @@ export default function Plan({
   photo,
   style,
   targetImage,
+  finish,
+  density,
+  frizz,
   prefs,
   setPrefs,
   lengthReady,
@@ -160,6 +167,9 @@ export default function Plan({
   photo: PreparedPhoto;
   style: TargetStyle;
   targetImage: string | null;
+  finish: Finish[];
+  density: CheckState;
+  frizz: CheckState;
   prefs: Preferences;
   setPrefs: (p: Preferences) => void;
   lengthReady: boolean;
@@ -169,7 +179,7 @@ export default function Plan({
   stages: { style: TargetStyle; preview: Preview }[];
   growPreview: Preview;
   texture: TextureState;
-  onScan: (right: PreparedPhoto, left: PreparedPhoto) => void;
+  onScan: (right: PreparedPhoto, left: PreparedPhoto, down?: PreparedPhoto) => void;
   /** A stage style id, or "grow". */
   onRetryPreview: (which: string) => void;
   onCard: () => void;
@@ -178,12 +188,57 @@ export default function Plan({
   const up = <K extends keyof Preferences>(k: K, v: Preferences[K]) => setPrefs({ ...prefs, [k]: v });
   const needsTexture = style.textureNeed !== "any" || style.textureSensitive;
   const measured = texture.state === "done" ? texture.texture : null;
-  const rules = route ? [...route.reasons, ...route.cautions].map((r) => r.rule.split("_")[0]) : [];
-
-  const stops: Stop[] = [{ label: "Now", sub: nowLabel, image: photo.dataUrl }];
-  stages.forEach((st, i) => stops.push({ label: stages.length > 1 ? `Stage ${i + 1}` : "Along the way", sub: st.style.name, image: img(st.preview) }));
-  if (route?.growOut) stops.push({ label: "Grown", sub: "Your own cut, longer", image: img(growPreview) });
-  stops.push({ label: "Target", sub: style.name, image: targetImage });
+  const previewState = (pv: Preview): RoadStop["state"] =>
+    pv.state === "success" ? "ready" : pv.state === "error" || pv.state === "timeout" ? "failed" : "pending";
+  const road: RoadStop[] = [
+    { key: "now", label: "Now", name: "You today", band: nowLabel || "Measuring…", bandId: baseline?.lengthBand ?? "ear_length", image: photo.dataUrl, state: "ready" },
+  ];
+  stages.forEach((st, i) =>
+    road.push({
+      key: st.style.id,
+      label: stages.length > 1 ? `Along the way · ${i + 1}` : "Along the way",
+      name: st.style.name,
+      band: shortBand(st.style.targetLengthBand),
+      bandId: st.style.targetLengthBand,
+      image: img(st.preview),
+      state: previewState(st.preview),
+      onRetry: () => onRetryPreview(st.style.id),
+    }),
+  );
+  if (route?.growOut) {
+    road.push({
+      key: "grow",
+      label: "Let it grow",
+      name: "Your hair, grown",
+      band: route.growOut === "chest" ? "Chest length" : "Long",
+      bandId: route.growOut === "chest" ? "above_chest" : "long",
+      image: img(growPreview),
+      state: previewState(growPreview),
+      note: "Your own cut, longer (YouCam Hair Extension).",
+      onRetry: () => onRetryPreview("grow"),
+    });
+  } else if (route?.growOutSkipped) {
+    road.push({
+      key: "grow",
+      label: "Let it grow",
+      name: "Your hair, grown",
+      band: "Preview later",
+      bandId: style.targetLengthBand,
+      image: null,
+      state: "skipped",
+      note: "YouCam Hair Extension lengthens the cut you have. From hair this short it would keep the short top, so it isn't shown yet.",
+    });
+  }
+  road.push({
+    key: "target",
+    label: "Destination",
+    name: style.name,
+    band: shortBand(style.targetLengthBand) + (finish.length ? ` · + ${finish.map((f) => f.name).join(" + ")}` : ""),
+    bandId: style.targetLengthBand,
+    image: targetImage,
+    state: targetImage ? "ready" : "pending",
+  });
+  const steps = baseline ? [...chairPlan(baseline.lengthBand, style, stages.map((st) => st.style)), ...finishSteps(finish)] : [];
 
   return (
     <main className="flow-main">
@@ -202,93 +257,67 @@ export default function Plan({
         <Interrupt headline="We couldn't read this frame.">{route.explanation}</Interrupt>
       ) : (
         <>
+          <RoadStrip stops={road} />
+
           <section className={`classification class-${route.route}`}>
             <div className="kicker">
-              <span>Route calculated</span>
-              <span className="accent">{[...new Set(rules)].join(" · ")}</span>
+              <span>Your route</span>
+              <span className="accent">{baseline ? distanceLabel(baseline.lengthBand, style.targetLengthBand) : ""}</span>
             </div>
             <div className="display" style={{ marginTop: 8 }}>{route.headline}</div>
             <p className="plain">{route.explanation}</p>
             <Measure baseline={baseline} target={style.targetLengthBand} />
           </section>
 
-          <ol className="route-v" aria-label="Your route">
-            <li className="done">
-              <span className="wp-dot" />
-              <div className="wp-head"><span className="wp-title">01 / Now</span><span className="wp-meta">{nowLabel}{measured ? ` · ${TEXTURE_GROUP_LABELS[measured.group]}` : ""}</span></div>
-              <div className="wp-body">You are here.</div>
-            </li>
-            {route.route === "cut_first" && (
-              <li className="done">
-                <span className="wp-dot" />
-                <div className="wp-head"><span className="wp-title">Cut</span><span className="wp-rule">R3</span></div>
-                <div className="wp-body">Agree on the shape before any length comes off. Going in stages is fine.</div>
-              </li>
-            )}
-            {stages.map((st, i) => (
-              <li className="done" key={st.style.id}>
-                <span className="wp-dot" />
-                <div className="wp-head">
-                  <span className="wp-title">{stages.length > 1 ? `Stage ${i + 1}` : "Along the way"}</span>
-                  <span className="wp-meta">{shortBand(st.style.targetLengthBand)}</span>
-                </div>
-                <div className="wp-body">{st.style.name}: a cut to ask for on the way, not a growth prediction.</div>
-                <Thumb src={img(st.preview)} label={st.style.name} pending={st.preview.state === "running" || st.preview.state === "idle"} />
-                {(st.preview.state === "error" || st.preview.state === "timeout") && (
-                  <button className="textbtn" onClick={() => onRetryPreview(st.style.id)}>Retry this preview</button>
-                )}
-              </li>
-            ))}
-            {route.growOut && (
-              <li className="done">
-                <span className="wp-dot" />
-                <div className="wp-head"><span className="wp-title">Let it grow</span><span className="wp-meta">{route.growOut === "chest" ? "Chest length" : "Long"}</span></div>
-                <div className="wp-body">Your own cut, longer (YouCam Hair Extension). Compare it with the target shape.</div>
-                <Thumb src={img(growPreview)} label="Your hair, grown" pending={growPreview.state === "running" || growPreview.state === "idle"} />
-                {(growPreview.state === "error" || growPreview.state === "timeout") && <button className="textbtn" onClick={() => onRetryPreview("grow")}>Retry this preview</button>}
-              </li>
-            )}
-            {route.growOutSkipped && (
-              <li className="done">
-                <span className="wp-dot" />
-                <div className="wp-head"><span className="wp-title">Let it grow</span><span className="wp-meta">Preview later</span></div>
-                <div className="wp-body">
-                  &quot;Your hair, grown&quot; (YouCam Hair Extension) lengthens the cut you have. From hair this short it would keep the
-                  short top and add length underneath, so it isn&apos;t shown yet. The along-the-way cut shows the route instead.
-                </div>
-              </li>
-            )}
-            <li className="done">
-              <span className="wp-dot fill" />
-              <div className="wp-head"><span className="wp-title">Target</span><span className="wp-meta">{shortBand(style.targetLengthBand)}{baseline ? ` · ${distanceLabel(baseline.lengthBand, style.targetLengthBand)}` : ""}</span></div>
-              <div className="wp-body">
-                {route.reasons.map((r) => (
-                  <p key={r.rule} style={{ margin: "0 0 4px" }}>{r.text} <span className="wp-rule">{r.rule.split("_")[0]}</span></p>
-                ))}
-              </div>
-            </li>
-          </ol>
-
-          <section style={{ padding: "18px 0", borderTop: "2px dashed var(--line)" }}>
-            <div className="kicker"><span>Scrub the route</span><span>0 → 100%</span></div>
-            <div style={{ marginTop: 12 }}><HairTimeline stops={stops} /></div>
+          <section className="why" aria-label="Why this route">
+            <h2 className="display h3">Why</h2>
+            <ul className="why-list">
+              {route.reasons.map((r) => <li key={r.rule}>{r.text}</li>)}
+              {measured && <li>Your texture reads as {TEXTURE_GROUP_LABELS[measured.group].toLowerCase()} (YouCam Hair Type Detection).</li>}
+              {density.state === "done" && <li>Your hair density reads as “{density.reading.term}” (YouCam Hair Density Detection).</li>}
+              {frizz.state === "done" && <li>Your frizz reads as “{frizz.reading.term}” (YouCam Hair Frizziness Detection).</li>}
+            </ul>
           </section>
 
           {route.cautions.length > 0 && (
             <div className="rou">
               <Mascot mood={MOOD[route.route]} size={56} />
               <div className="rou-body">
-                <div className="rou-label">ROU&apos;S NOTE</div>
+                <div className="rou-label">WORTH TALKING ABOUT</div>
                 {route.cautions.map((c) => (
-                  <p key={c.rule} className="rou-text" style={{ margin: "0 0 6px" }}>{c.text} <span className="wp-rule">{c.rule.split("_")[0]}</span></p>
+                  <p key={c.rule} className="rou-text" style={{ margin: "0 0 6px" }}>{c.text}</p>
                 ))}
               </div>
             </div>
           )}
+
+          {steps.length > 0 && (
+            <section className="chair-sec" aria-label="In the chair">
+              <div className="kicker"><span>In the chair</span><span>{steps.length === 1 ? "One visit" : `${steps.length} steps`}</span></div>
+              <h2 className="display h3" style={{ margin: "6px 0 4px" }}>What to ask for.</h2>
+              <p className="small muted" style={{ margin: "0 0 12px" }}>In order. The lengths are a starting point; your barber or stylist adapts them to your hair.</p>
+              <ChairSteps steps={steps} />
+            </section>
+          )}
+
+          <details className="decided">
+            <summary>How we decided</summary>
+            <ul className="decided-list">
+              {[...route.reasons, ...route.cautions].map((r) => (
+                <li key={r.rule}><span className="wp-rule">{r.rule}</span> {r.text}</li>
+              ))}
+            </ul>
+            <div className="doc-label" style={{ marginTop: 10 }}>Limits</div>
+            <ul className="decided-list">
+              {route.limitations.map((l) => <li key={l}>{l}</li>)}
+            </ul>
+          </details>
         </>
       )}
 
-      {needsTexture && <TextureCheck texture={texture} onScan={onScan} />}
+      {route && route.route !== "retake_required" && (
+        <TextureCheck texture={texture} frizz={frizz} density={density} textureMatters={needsTexture} onScan={onScan} />
+      )}
 
       <section style={{ padding: "18px 0", borderTop: "2px dashed var(--line)" }}>
         <div className="kicker"><span>Your limits</span><span>On the document</span></div>

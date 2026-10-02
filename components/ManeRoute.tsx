@@ -1,20 +1,27 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CATALOG, getStyle } from "@/lib/catalog";
+import { CATALOG, getStyle, stylesIn, thumbFor } from "@/lib/catalog";
 import { planRoute } from "@/lib/rules";
-import type { GrowOutLength, HairBaseline, HairTexture, LengthBand, Preferences } from "@/lib/types";
+import { LENGTH_BANDS, type GrowOutLength, type HairBaseline, type HairTexture, type LengthBand, type Preferences } from "@/lib/types";
 import {
+  ApiError,
   pollExtend,
+  pollFinish,
+  pollHairCheck,
   pollLength,
   pollTexture,
   pollVto,
   startExtend,
+  startFinish,
+  startHairCheck,
   startLength,
   startTexture,
   startVto,
   uploadPhoto,
 } from "@/lib/client/api";
+import { withFinish, type Finish, type FinishKind } from "@/lib/addons";
+import type { HairReading } from "@/lib/hairCheck";
 import { preparePhoto, type PreparedPhoto } from "@/lib/client/image";
 import { baselineText, type CardData } from "@/lib/client/card";
 import { journeyFromCard, putJourney } from "@/lib/client/journeys";
@@ -23,7 +30,8 @@ import Pick, { type LengthState } from "./flow/Pick";
 import TryOn from "./flow/TryOn";
 import Plan, { type TextureState } from "./flow/Plan";
 import CardView from "./flow/CardView";
-import { Lightbox, toFailure, type Preview, type Shelf } from "./flow/shared";
+import { Lightbox, toFailure, type CheckState, type Preview, type Shelf } from "./flow/shared";
+import type { FinishState } from "./flow/Finish";
 import SiteNav from "./route/SiteNav";
 
 // Flow: start (tips + consent + photo) → pick → try on (compare many) → plan → card.
@@ -55,6 +63,9 @@ type Saved = {
   prefs: Preferences;
   looks: Record<string, { image?: string | null; taskId?: string }>;
   grow: Record<string, { image?: string | null; taskId?: string }>;
+  finishes?: Record<string, { steps: Finish[]; image?: string | null }>;
+  density?: HairReading;
+  frizz?: HairReading;
 };
 
 const persistable = (p: Preview) =>
@@ -75,6 +86,9 @@ export default function ManeRoute() {
   const [prefs, setPrefs] = useState<Preferences>(DEFAULT_PREFS);
   const [looks, setLooks] = useState<Looks>({});
   const [grow, setGrow] = useState<Record<string, Preview>>({});
+  const [finishes, setFinishes] = useState<Record<string, FinishState>>({});
+  const [density, setDensity] = useState<CheckState>({ state: "none" });
+  const [frizz, setFrizz] = useState<CheckState>({ state: "none" });
   const [simulated, setSimulated] = useState(false);
   const [restored, setRestored] = useState(false);
 
@@ -129,6 +143,24 @@ export default function ManeRoute() {
     setLength({ state: "done", baseline: out.result });
   }, []);
 
+  // YouCam Hair Density (front photo) and Frizziness (three scan photos) run quietly in the
+  // background; a failure (for example a slightly turned head) just means no reading.
+  const runCheck = useCallback(async (kind: "density" | "frizz", ids: string[], set: (c: CheckState) => void) => {
+    set({ state: "running" });
+    try {
+      const { taskId } = await startHairCheck(kind, ids);
+      const out = await pollHairCheck(kind, taskId, abortRef.current.signal);
+      if (out.kind === "aborted") return;
+      if (out.kind === "success") {
+        if (out.simulated) setSimulated(true);
+        return set({ state: "done", reading: out.result });
+      }
+      set({ state: "error", message: out.kind === "error" ? out.failure.message : "It took too long." });
+    } catch (e) {
+      set({ state: "error", message: toFailure(e).message });
+    }
+  }, []);
+
   const runLength = useCallback(
     async (p: PreparedPhoto) => {
       setLength({ state: "running" });
@@ -141,7 +173,7 @@ export default function ManeRoute() {
         setLength({ state: "error", failure: toFailure(e) });
       }
     },
-    [ensureUpload, pollLengthTask],
+    [ensureUpload, pollLengthTask, runCheck],
   );
   const lengthTaskRef = useRef<string | null>(null);
 
@@ -158,6 +190,9 @@ export default function ManeRoute() {
     setActiveId(null);
     setPlanId(null);
     setTexture({ state: "none" });
+    setFinishes({});
+    setDensity({ state: "none" });
+    setFrizz({ state: "none" });
     runLength(p);
     setStep("pick");
   };
@@ -201,17 +236,100 @@ export default function ManeRoute() {
   const tryLook = (id: string, task?: string) => runImage(id, setLooks, (f) => startVto(f, id), pollVto, task);
   const growLook = (len: GrowOutLength, task?: string) => runImage(len, setGrow, (f) => startExtend(f, len), pollExtend, task);
 
+  const showLook = (id: string) => {
+    if (!looks[id] || looks[id].state === "error") tryLook(id);
+    if (!tried.includes(id)) setTried((t) => [...t, id]);
+    setActiveId(id);
+  };
+
   const onTryOn = () => {
     if (!selected) return;
-    if (!looks[selected] || looks[selected].state === "error") tryLook(selected);
-    if (!tried.includes(selected)) setTried((t) => [...t, selected]);
-    setActiveId(selected);
+    showLook(selected);
     setStep("tryon");
   };
+
+  // Three untried cuts near the active look's length, to try straight from the lookbook.
+  const suggestions = useMemo(() => {
+    const a = activeId ? getStyle(activeId) : undefined;
+    if (!a) return [];
+    const ai = LENGTH_BANDS.indexOf(a.targetLengthBand);
+    const near = (b: LengthBand) => Math.abs(LENGTH_BANDS.indexOf(b) - ai);
+    return stylesIn(shelf ?? "all")
+      .filter((s) => s.templateId && !tried.includes(s.id))
+      .sort((x, y) => near(x.targetLengthBand) - near(y.targetLengthBand) || Number(x.home !== a.home) - Number(y.home !== a.home))
+      .slice(0, 3)
+      .map((s) => ({ style: s, thumb: thumbFor(s, shelf ?? "all") }));
+  }, [activeId, tried, shelf]);
 
   const retryLook = (id: string) => {
     const p = looks[id];
     tryLook(id, p?.state === "timeout" ? p.taskId : undefined);
+  };
+
+  // ---------- finish the look: beard, fringe, colour on top of a try-on ----------
+  const cutImage = (id: string): string | null => {
+    const p = looks[id];
+    return p?.state === "success" ? p.image ?? photo?.dataUrl ?? null : null;
+  };
+  const shownImage = (id: string): string | null => {
+    const f = finishes[id];
+    return f?.preview.state === "success" && f.preview.image ? f.preview.image : cutImage(id);
+  };
+
+  /** Applies `steps[start..]` one after another, each on the previous result. */
+  const renderFinishes = async (styleId: string, steps: Finish[], from: string, start: number) => {
+    setFinishes((m) => ({ ...m, [styleId]: { steps, preview: { state: "running" } } }));
+    let image = from;
+    try {
+      for (const f of steps.slice(start)) {
+        const raw = await (await fetch(image)).blob();
+        const prepared = await preparePhoto(raw.type.startsWith("image/") ? raw : new Blob([raw], { type: "image/jpeg" }));
+        const up = await uploadPhoto(prepared.blob);
+        if (up.simulated) setSimulated(true);
+        const { taskId } = await startFinish(f.kind, up.fileId, f.id);
+        const out = await pollFinish(f.kind, taskId, abortRef.current.signal);
+        if (out.kind === "aborted") return;
+        if (out.kind === "timeout") throw new ApiError({ code: "timeout", message: "YouCam took too long to render it.", retake: false });
+        if (out.kind === "error") throw new ApiError(out.failure);
+        if (out.result.simulated) setSimulated(true);
+        image = out.result.image ?? image;
+      }
+      setFinishes((m) => ({ ...m, [styleId]: { steps, preview: { state: "success", image } } }));
+    } catch (e) {
+      const failure = e instanceof ApiError || !(e instanceof Error) || !e.message ? toFailure(e) : { code: "finish_failed", message: e.message, retake: false };
+      setFinishes((m) => ({ ...m, [styleId]: { steps, preview: { state: "error", failure } } }));
+    }
+  };
+
+  const applyFinish = (styleId: string, f: Finish) => {
+    const cut = cutImage(styleId);
+    if (!cut) return;
+    const cur = finishes[styleId];
+    const steps = withFinish(cur?.steps ?? [], f);
+    const adding = !cur?.steps.some((x) => x.kind === f.kind);
+    // A new kind goes on top of what's shown; replacing one re-renders the stack from the cut.
+    if (adding && cur?.preview.state === "success" && cur.preview.image) return renderFinishes(styleId, steps, cur.preview.image, steps.length - 1);
+    if (adding && !cur) return renderFinishes(styleId, steps, cut, 0);
+    return renderFinishes(styleId, steps, cut, 0);
+  };
+  const resetFinish = (styleId: string) =>
+    setFinishes((m) => {
+      const n = { ...m };
+      delete n[styleId];
+      return n;
+    });
+  const removeFinish = (styleId: string, kind: FinishKind) => {
+    const cur = finishes[styleId];
+    const cut = cutImage(styleId);
+    if (!cur || !cut) return;
+    const steps = cur.steps.filter((x) => x.kind !== kind);
+    if (!steps.length) return resetFinish(styleId);
+    renderFinishes(styleId, steps, cut, 0);
+  };
+  const retryFinish = (styleId: string) => {
+    const cur = finishes[styleId];
+    const cut = cutImage(styleId);
+    if (cur && cut) renderFinishes(styleId, cur.steps, cut, 0);
   };
 
   // ---------- plan ----------
@@ -223,9 +341,13 @@ export default function ManeRoute() {
         ? planRoute(baseline, planStyle, prefs, CATALOG, {
             collection: shelf ?? "all",
             texture: texture.state === "done" ? texture.texture : null,
+            hair: {
+              density: density.state === "done" ? density.reading : null,
+              frizz: frizz.state === "done" ? frizz.reading : null,
+            },
           })
         : null,
-    [planStyle, baseline, prefs, shelf, texture],
+    [planStyle, baseline, prefs, shelf, texture, density, frizz],
   );
   const stageStyles = useMemo(
     () => (route?.stageStyleIds ?? []).map((id) => getStyle(id)).filter((s): s is NonNullable<typeof s> => Boolean(s)),
@@ -241,11 +363,15 @@ export default function ManeRoute() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stageKey, route?.growOut, safeStep]);
 
-  const onScan = async (right: PreparedPhoto, left: PreparedPhoto) => {
+  // The hair check: texture (front, right, left), frizz (front, left, right) and, with the
+  // lowered-head photo, density. Frizz and density never block the texture result.
+  const onScan = async (right: PreparedPhoto, left: PreparedPhoto, down?: PreparedPhoto) => {
     setTexture({ state: "running" });
     try {
       const front = await ensureUpload(photo!);
-      const [r, l] = await Promise.all([uploadPhoto(right.blob), uploadPhoto(left.blob)]);
+      const [r, l, d] = await Promise.all([uploadPhoto(right.blob), uploadPhoto(left.blob), down ? uploadPhoto(down.blob) : Promise.resolve(null)]);
+      runCheck("frizz", [front, l.fileId, r.fileId], setFrizz);
+      if (d) runCheck("density", [d.fileId], setDensity);
       const { taskId } = await startTexture([front, r.fileId, l.fileId]);
       const out = await pollTexture(taskId, abortRef.current.signal);
       if (out.kind === "success") return setTexture({ state: "done", texture: out.result });
@@ -287,6 +413,17 @@ export default function ManeRoute() {
           );
         setLooks(restoreMap(s.looks));
         setGrow(restoreMap(s.grow));
+        if (s.finishes) {
+          setFinishes(
+            Object.fromEntries(
+              Object.entries(s.finishes)
+                .filter(([, v]) => v.image)
+                .map(([k, v]) => [k, { steps: v.steps, preview: { state: "success", image: v.image! } as Preview }]),
+            ),
+          );
+        }
+        if (s.density) setDensity({ state: "done", reading: s.density });
+        if (s.frizz) setFrizz({ state: "done", reading: s.frizz });
         // Resume unfinished YouCam tasks instead of paying for them again.
         for (const [k, v] of Object.entries(s.looks)) if (v.taskId) runImage(k, setLooks, (f) => startVto(f, k), pollVto, v.taskId);
         for (const [k, v] of Object.entries(s.grow)) if (v.taskId) runImage(k, setGrow, (f) => startExtend(f, k as GrowOutLength), pollExtend, v.taskId);
@@ -326,18 +463,25 @@ export default function ManeRoute() {
         prefs,
         looks: Object.fromEntries(Object.entries(looks).map(([k, v]) => [k, persistable(v)])),
         grow: Object.fromEntries(Object.entries(grow).map(([k, v]) => [k, persistable(v)])),
+        finishes: Object.fromEntries(
+          Object.entries(finishes)
+            .filter(([, v]) => v.preview.state === "success")
+            .map(([k, v]) => [k, { steps: v.steps, image: v.preview.state === "success" ? v.preview.image : null }]),
+        ),
+        density: density.state === "done" ? density.reading : undefined,
+        frizz: frizz.state === "done" ? frizz.reading : undefined,
       };
       try {
         sessionStorage.setItem(STORE, JSON.stringify(s));
       } catch {
         // Storage full: keep only the essentials so a refresh still restores the photo and choices.
         try {
-          sessionStorage.setItem(STORE, JSON.stringify({ ...s, looks: {}, grow: {} }));
+          sessionStorage.setItem(STORE, JSON.stringify({ ...s, looks: {}, grow: {}, finishes: {} }));
         } catch {}
       }
     }, 300);
     return () => clearTimeout(t);
-  }, [restored, photo, safeStep, fileId, baseline, length, texture, shelf, band, selected, tried, activeId, planId, prefs, looks, grow]);
+  }, [restored, photo, safeStep, fileId, baseline, length, texture, shelf, band, selected, tried, activeId, planId, prefs, looks, grow, finishes, density, frizz]);
 
   useEffect(() => {
     try {
@@ -372,12 +516,18 @@ export default function ManeRoute() {
       prefs,
       route,
       sourceImage: photo.dataUrl,
-      targetImage: img(looks[planStyle.id]),
+      targetImage: shownImage(planStyle.id),
+      targetCutImage: img(looks[planStyle.id]),
+      finish: finishes[planStyle.id]?.preview.state === "success" ? finishes[planStyle.id].steps : [],
+      hairCheck: {
+        density: density.state === "done" ? density.reading : null,
+        frizz: frizz.state === "done" ? frizz.reading : null,
+      },
       growOutImage: route.growOut ? img(grow[route.growOut]) : null,
       simulated,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [photo, baseline, planStyle, route, stageStyles, texture, prefs, looks, grow, simulated]);
+  }, [photo, baseline, planStyle, route, stageStyles, texture, prefs, looks, grow, finishes, density, frizz, simulated]);
 
   const stepIdx = STEPS.indexOf(safeStep);
   const tryList = tried.map((id) => ({ styleId: id, preview: looks[id] ?? ({ state: "idle" } as Preview) }));
@@ -385,7 +535,7 @@ export default function ManeRoute() {
   if (!restored) return <div className="flow" />;
 
   return (
-    <div className="flow">
+    <div className={`flow ${safeStep === "tryon" || safeStep === "pick" ? "wide" : ""}`}>
       <SiteNav current="/consult" right={<span className="nav-step">Step {stepIdx + 1} of {STEPS.length}</span>} />
       <div
         className="progress"
@@ -423,15 +573,29 @@ export default function ManeRoute() {
           onRetake={retake}
           onKeepWaiting={() => length.state === "timeout" && pollLengthTask(length.taskId)}
           onRetryLength={() => photo && runLength(photo)}
+          density={density}
         />
       )}
 
       {safeStep === "tryon" && photo && activeId && (
         <TryOn
           photo={photo}
+          baseline={baseline}
           tries={tryList}
           activeId={activeId}
           setActive={setActiveId}
+          suggestions={suggestions}
+          shelf={shelf ?? "all"}
+          finish={finishes[activeId]}
+          noChemicals={prefs.chemical === "no"}
+          onFinish={(f) => applyFinish(activeId, f)}
+          onRemoveFinish={(k) => removeFinish(activeId, k)}
+          onResetFinish={() => resetFinish(activeId)}
+          onRetryFinish={() => retryFinish(activeId)}
+          onTry={(id) => {
+            showLook(id);
+            window.scrollTo({ top: 0, behavior: "smooth" });
+          }}
           onRetry={retryLook}
           onRetake={retake}
           onTryAnother={() => setStep("pick")}
@@ -446,7 +610,10 @@ export default function ManeRoute() {
         <Plan
           photo={photo}
           style={planStyle}
-          targetImage={img(looks[planStyle.id])}
+          targetImage={shownImage(planStyle.id)}
+          finish={finishes[planStyle.id]?.preview.state === "success" ? finishes[planStyle.id].steps : []}
+          density={density}
+          frizz={frizz}
           prefs={prefs}
           setPrefs={setPrefs}
           lengthReady={Boolean(baseline)}

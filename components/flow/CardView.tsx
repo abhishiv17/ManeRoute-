@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { baselineText, cardSummaryText, CHEM, GROW, renderCardPng, type CardData } from "@/lib/client/card";
+import { baselineText, cardSummaryText, chairFor, CHEM, GROW, renderCardPng, type CardData } from "@/lib/client/card";
 import { makeThumb, savePlan } from "@/lib/client/plans";
 import Mascot from "@/components/Mascot";
 import { ROUTE_HEADLINES } from "@/lib/rules";
@@ -60,6 +60,7 @@ export default function CardView({
     };
   }, [full]);
 
+  const chair = useMemo(() => chairFor(data), [data]);
   const fileName = `maneroute-${data.target.id}.png`;
   const download = () => {
     if (!png) return;
@@ -143,10 +144,28 @@ export default function CardView({
             ))}
           </div>
           <div className="doc-grid">
-            <div><div className="doc-label">Current</div><div className="doc-val">{baselineText(data.baseline).split(" (")[0]}</div>{data.texture && <div className="mono">{data.texture.term}</div>}</div>
+            <div><div className="doc-label">Current</div><div className="doc-val">{baselineText(data.baseline).split(" (")[0]}</div>{data.texture && <div className="mono">{data.texture.term}</div>}{data.hairCheck?.density && <div className="mono">Density · {data.hairCheck.density.term}</div>}{data.hairCheck?.frizz && <div className="mono">Frizz · {data.hairCheck.frizz.term}</div>}</div>
             <div><div className="doc-label">Target</div><div className="doc-val">{data.target.name}</div></div>
             <div style={{ gridColumn: "1 / -1" }}><div className="doc-label">Route</div><div className="doc-val accent">{ROUTE_HEADLINES[data.route.route]}</div></div>
           </div>
+          {chair.length > 0 && (
+            <div className="doc-sec">
+              <div className="doc-label">In the chair, ask for</div>
+              <ol className="doc-chair">
+                {chair.map((c, i) => (
+                  <li key={`${c.when}-${c.title}`}>
+                    <span className="doc-chair-num">{i + 1}</span>
+                    <span>
+                      <span className="doc-chair-when">{c.when}</span>
+                      <b className="doc-chair-title">{c.title}</b>
+                      <span className="doc-chair-ask">“{c.ask}”</span>
+                      {c.details.length > 0 && <span className="doc-chair-details">{c.details.join(" · ")}</span>}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
           <div className="doc-sec">
             <div className="doc-label">What matters</div>
             <ul className="doc-list">{keep.map((k) => <li key={k}>{k}</li>)}{note.trim() && <li>{note.trim()}</li>}</ul>

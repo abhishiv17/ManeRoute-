@@ -4,9 +4,9 @@ import { useEffect, useRef, useState } from "react";
 
 // Live camera capture with a framing guide. Works on laptops (webcam) and phones (front camera).
 // Needs a secure context (https or localhost). Falls back to file upload on any failure.
-// `pose` switches the guide for the texture scan: front, head turned right, head turned left.
+// `pose` switches the guide for the hair check: front, head turned right, head turned left, head lowered.
 
-export type Pose = "front" | "right" | "left";
+export type Pose = "front" | "right" | "left" | "down";
 
 type Props = {
   onCapture: (file: File) => void;
@@ -23,6 +23,7 @@ const PROMPTS: Record<Pose, string> = {
   front: "Face in the frame · shoulders on the line · hair down",
   right: "Turn your head right, about halfway · shoulders still",
   left: "Now turn your head left, about halfway",
+  down: "Face the camera, then lower your head about halfway · hairline in view · hair untied",
 };
 
 export default function CameraCapture({ onCapture, onCancel, onFallback, pose = "front", autoTimer = false }: Props) {
@@ -148,7 +149,7 @@ export default function CameraCapture({ onCapture, onCancel, onFallback, pose = 
           <text x="92" y="40" fill="#FFF8EA" fontFamily="var(--body)" fontWeight="700" fontSize="8" letterSpacing="1">FACE</text>
           {pose !== "front" && (
             <path
-              d={pose === "right" ? "M226 141 h34 m-10 -9 l10 9 -10 9" : "M74 141 h-34 m10 -9 l-10 9 10 9"}
+              d={pose === "right" ? "M226 141 h34 m-10 -9 l10 9 -10 9" : pose === "left" ? "M74 141 h-34 m10 -9 l-10 9 10 9" : "M150 18 v30 m-9 -10 l9 10 9 -10"}
               stroke="#F08A24"
               strokeWidth="2.5"
               fill="none"

@@ -146,7 +146,7 @@ export default function Landing() {
             <ul className="fact-cards">
               <li>
                 <h4 className="display">Check-ins that measure</h4>
-                <p>Every few weeks, one new photo. YouCam Hair Length Detection measures it again, and you move along the road when your length does. Your pace is yours, never predicted.</p>
+                <p>Every few weeks, one new photo. YouCam Hair Length Detection measures it again, and your destination is re-rendered on it, so you see the cut fitting your own hair as it grows. Your pace is yours, never predicted.</p>
               </li>
               <li>
                 <h4 className="display">A routine for your hair</h4>
@@ -209,7 +209,7 @@ export default function Landing() {
           <p className="chapter-num">Before you set off</p>
           <h2 className="display h2">Questions</h2>
           <details><summary>Is this a haircut filter?</summary><p>No. The try-on is the start. The point is the distance from your hair now, the route, and the card you take to your appointment.</p></details>
-          <details><summary>How does tracking work?</summary><p>Start a journey from your consultation. Every few weeks, take one new photo: YouCam measures your length band again (about one unit) and Rou moves along the road when it changes. Log your cuts, tick off your routine, and add the reminders to your calendar. It all stays on your device.</p></details>
+          <details><summary>How does tracking work?</summary><p>Start a journey from your consultation. Every few weeks, take one new photo: YouCam measures your length band again, renders your destination on the new photo, and Rou moves along the road when your length changes. Log your cuts, tick off your routine, and add the reminders to your calendar. It all stays on your device.</p></details>
           <details><summary>Why no millimetres or “weeks to grow”?</summary><p>YouCam measures length as one of five visible bands, and growth speed differs for everyone. ManeRoute shows the real bands and the distance between them instead of inventing numbers.</p></details>
           <details><summary>What is the texture check?</summary><p>Two extra photos with your head turned. YouCam Hair Type Detection reads your natural texture, which changes the advice for wavy, curly and sleek looks. It&apos;s optional and only offered when a look depends on texture.</p></details>
           <details><summary>Where are my saved plans?</summary><p>Only in this browser on this device. They are never uploaded.</p></details>

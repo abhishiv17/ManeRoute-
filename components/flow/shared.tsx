@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { LENGTH_BAND_LABELS, type Collection, type HairBaseline, type TargetStyle } from "@/lib/types";
 import { ApiError, type ApiFailure } from "@/lib/client/api";
+import type { HairReading } from "@/lib/hairCheck";
 
 export type Preview =
   | { state: "idle" }
@@ -12,6 +13,13 @@ export type Preview =
   | { state: "error"; failure: ApiFailure };
 
 export type Shelf = Collection | "all";
+
+/** A background YouCam hair check (density, frizz): kept quiet unless it reads clearly. */
+export type CheckState =
+  | { state: "none" }
+  | { state: "running" }
+  | { state: "done"; reading: HairReading }
+  | { state: "error"; message: string };
 
 export const toFailure = (e: unknown): ApiFailure =>
   e instanceof ApiError ? e.failure : { code: "unknown", message: "Something went wrong. Please try again.", retake: false };
@@ -91,10 +99,66 @@ export function Seg<T extends string>({
 
 // ---------- Before / after slider ----------
 
-export function CompareSlider({ before, after, beforeLabel, afterLabel }: { before: string; after: string; beforeLabel: string; afterLabel: string }) {
-  const [pos, setPos] = useState(50);
+const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+
+/**
+ * Drag to compare. With `intro`, each new `after` image is revealed with a wipe: your photo,
+ * then the new cut sweeps across, then the handle settles in the middle. Any touch stops it.
+ */
+export function CompareSlider({
+  before,
+  after,
+  beforeLabel,
+  afterLabel,
+  intro = false,
+  className = "",
+}: {
+  before: string;
+  after: string;
+  beforeLabel: string;
+  afterLabel: string;
+  intro?: boolean;
+  className?: string;
+}) {
+  const [pos, setPos] = useState(intro ? 100 : 50);
+  const [wiping, setWiping] = useState(false);
+  const touched = useRef(false);
+
+  useEffect(() => {
+    if (!intro) return;
+    touched.current = false;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setPos(50);
+      return;
+    }
+    let raf = 0;
+    const start = performance.now();
+    const tick = (now: number) => {
+      if (touched.current) return setWiping(false);
+      const t = now - start;
+      if (t < 300) setPos(100);
+      else if (t < 1500) setPos(100 - 100 * easeInOut((t - 300) / 1200));
+      else if (t < 1900) setPos(0);
+      else if (t < 2600) setPos(50 * easeInOut((t - 1900) / 700));
+      else {
+        setPos(50);
+        return setWiping(false);
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    setWiping(true);
+    setPos(100);
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [intro, after]);
+
+  const stop = () => {
+    touched.current = true;
+    setWiping(false);
+  };
+
   return (
-    <div className="compare" style={{ ["--pos" as string]: `${pos}%` }}>
+    <div className={`compare ${wiping ? "wiping" : ""} ${className}`} style={{ ["--pos" as string]: `${pos}%` }}>
       <img src={after} alt={afterLabel} className="compare-after" />
       <div className="compare-before">
         <img src={before} alt={beforeLabel} />
@@ -106,8 +170,13 @@ export function CompareSlider({ before, after, beforeLabel, afterLabel }: { befo
         type="range"
         min={0}
         max={100}
-        value={pos}
-        onChange={(e) => setPos(Number(e.target.value))}
+        value={Math.round(pos)}
+        onPointerDown={stop}
+        onKeyDown={stop}
+        onChange={(e) => {
+          stop();
+          setPos(Number(e.target.value));
+        }}
         aria-label={`Slide to compare ${beforeLabel} and ${afterLabel}`}
       />
     </div>
