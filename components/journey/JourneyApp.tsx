@@ -125,6 +125,7 @@ export default function JourneyApp() {
           <CheckIn
             journey={journey}
             onSave={(c) => update(journey.id, (j) => ({ ...j, checkins: [...j.checkins, c] }))}
+            onPatch={(cid, fields) => update(journey.id, (j) => ({ ...j, checkins: j.checkins.map((x) => (x.id === cid ? { ...x, ...fields } : x)) }))}
             onClose={() => go({ at: "home" })}
           />
         )}
@@ -211,6 +212,9 @@ function Dashboard({
   const day = Math.floor((Date.now() - j.createdAt) / DAY) + 1;
   const photos = useMemo(() => j.checkins.filter((c) => c.photo).sort((a, b) => a.at - b.at), [j.checkins]);
   const history = useMemo(() => [...j.checkins].sort((a, b) => b.at - a.at), [j.checkins]);
+  const renders = useMemo(() => j.checkins.filter((c) => c.preview).sort((a, b) => a.at - b.at), [j.checkins]);
+  const dayOne = j.cutImage ?? j.milestones.find((m) => m.kind === "target")?.image;
+  const latestRender = renders[renders.length - 1];
 
   const addToCalendar = () => {
     const events = [
@@ -297,6 +301,44 @@ function Dashboard({
       </section>
       <button className="textbtn" onClick={addToCalendar}>Add reminders to my calendar</button>
 
+      <section className="jr-section" aria-label="Your destination, on your hair">
+        <div className="jr-sec-head">
+          <h2 className="display h3">{j.targetName}, on your hair</h2>
+          {latestRender && <span className="mono muted">Latest · {date(latestRender.at)}</span>}
+        </div>
+        {latestRender && dayOne ? (
+          <>
+            <CompareSlider
+              before={dayOne}
+              after={latestRender.preview!}
+              beforeLabel={`Day 1 · ${BAND_SHORT[j.milestones[0].band]}`}
+              afterLabel={`${date(latestRender.at)}${latestRender.band ? ` · ${BAND_SHORT[latestRender.band]}` : ""}`}
+            />
+            <p className="small muted" style={{ marginTop: 8 }}>
+              The same destination, rendered by YouCam Hairstyle Try-On on your first photo and on your latest check-in.
+            </p>
+            {renders.length > 1 && (
+              <div className="jr-renders">
+                {renders.map((c) => (
+                  <button key={c.id} onClick={() => zoom(c.preview!, date(c.at))} aria-label={`Enlarge the render from ${date(c.at)}`}>
+                    <img src={c.preview} alt="" />
+                    <span>{date(c.at)}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="jr-dest-empty">
+            {dayOne && <img src={dayOne} alt="" />}
+            <p className="small">
+              Every check-in also renders {j.targetName} on that day&apos;s photo with YouCam Hairstyle Try-On, so you see the
+              destination fitting your own hair a little better each time, even before the length band changes.
+            </p>
+          </div>
+        )}
+      </section>
+
       <section className="jr-section">
         <div className="jr-sec-head"><h2 className="display h3">The road</h2>{myPace && <span className="jr-pace">Your pace: {myPace.text}</span>}</div>
         <RoadMap journey={j} onLog={(m) => onLog(m)} />
@@ -347,6 +389,11 @@ function Dashboard({
                 <div className="jr-log-s">{date(c.at)}{c.kind === "measure" ? " · YouCam Hair Length Detection" : ""}{c.simulated ? " · simulated" : ""}</div>
                 {c.note && <div className="small">{c.note}</div>}
               </div>
+              {c.preview && (
+                <button className="jr-log-img" onClick={() => zoom(c.preview!, `${j.targetName} · ${date(c.at)}`)} aria-label={`Enlarge ${j.targetName} rendered on ${date(c.at)}`}>
+                  <img src={c.preview} alt="" />
+                </button>
+              )}
             </li>
           ))}
         </ul>

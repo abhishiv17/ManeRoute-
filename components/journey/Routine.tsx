@@ -13,7 +13,7 @@ export function routineFor(j: Journey): RoutineT | null {
   if (!j.answers) return null;
   const s = getStyle(j.targetId);
   if (!s) return null;
-  return buildRoutine({ answers: j.answers, measuredTexture: j.texture?.group ?? null, band: currentBand(j), target: s, direction: j.direction });
+  return buildRoutine({ answers: j.answers, measuredTexture: j.texture?.group ?? null, band: currentBand(j), target: s, direction: j.direction, hair: j.hairCheck });
 }
 
 type Q<K extends keyof RoutineAnswers> = { key: K; label: string; options: [RoutineAnswers[K], string][] };

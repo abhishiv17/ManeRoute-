@@ -4,30 +4,36 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import CameraCapture from "@/components/CameraCapture";
 import Mascot from "@/components/Mascot";
 import Interrupt from "@/components/route/Interrupt";
-import { pollLength, startLength, uploadPhoto, type ApiFailure } from "@/lib/client/api";
+import { pollLength, pollVto, startLength, startVto, uploadPhoto, type ApiFailure } from "@/lib/client/api";
 import { CaptureError, preparePhoto, type PreparedPhoto } from "@/lib/client/image";
 import { makeThumb } from "@/lib/client/plans";
-import { toFailure } from "@/components/flow/shared";
+import { CompareSlider, toFailure } from "@/components/flow/shared";
 import { BAND_SHORT, currentBand, type CheckIn as CheckInT, type Journey } from "@/lib/journey";
 import { LENGTH_BANDS } from "@/lib/types";
 
-// A check-in: one new front photo, measured again by YouCam Hair Length Detection (about 1 unit).
-// The result moves Rou along the road when the band changes. Nothing is predicted.
+// A check-in: one new front photo, measured again by YouCam Hair Length Detection, with the
+// destination re-rendered on it by YouCam Hairstyle Try-On (about 2 units in all). The band
+// moves Rou along the road; the re-render shows the destination fitting today's hair even when
+// the band hasn't changed yet. Nothing is predicted.
 type Phase =
   | { at: "intro" }
   | { at: "camera" }
   | { at: "confirm"; photo: PreparedPhoto }
   | { at: "measuring"; photo: PreparedPhoto }
   | { at: "error"; photo: PreparedPhoto; failure: ApiFailure }
-  | { at: "done"; checkin: CheckInT };
+  | { at: "done"; photo: PreparedPhoto; checkin: CheckInT; render: Render };
+
+type Render = { state: "running" } | { state: "ready"; image: string } | { state: "simulated" } | { state: "failed"; message: string };
 
 export default function CheckIn({
   journey,
   onSave,
+  onPatch,
   onClose,
 }: {
   journey: Journey;
   onSave: (c: CheckInT) => Promise<void>;
+  onPatch: (id: string, fields: Partial<CheckInT>) => Promise<void>;
   onClose: () => void;
 }) {
   const [phase, setPhase] = useState<Phase>({ at: "intro" });
@@ -37,6 +43,8 @@ export default function CheckIn({
   const abort = useRef(new AbortController());
   const before = currentBand(journey);
   const lastPhoto = [...journey.checkins].reverse().find((c) => c.photo)?.photo;
+  // Check-ins re-render the haircut alone, so compare with the day-1 haircut (before any beard or colour).
+  const dayOne = journey.cutImage ?? journey.milestones.find((m) => m.kind === "target")?.image;
 
   // A fresh controller per mount (React's dev double-mount would otherwise leave it aborted).
   useEffect(() => {
@@ -64,6 +72,11 @@ export default function CheckIn({
     setPhase({ at: "measuring", photo });
     try {
       const up = await uploadPhoto(photo.blob);
+      // The destination, re-rendered on today's photo, runs alongside the measurement.
+      const render = (async () => {
+        const { taskId } = await startVto(up.fileId, journey.targetId);
+        return pollVto(taskId, abort.current.signal);
+      })().catch((e) => ({ kind: "error" as const, failure: toFailure(e) }));
       const { taskId } = await startLength(up.fileId);
       const out = await pollLength(taskId, abort.current.signal);
       if (out.kind === "aborted") return;
@@ -80,7 +93,21 @@ export default function CheckIn({
         simulated: Boolean(up.simulated || out.simulated),
       };
       await onSave(c);
-      setPhase({ at: "done", checkin: c });
+      setPhase({ at: "done", photo, checkin: c, render: { state: "running" } });
+
+      const r = await render;
+      if (r.kind === "aborted") return;
+      let next: Render;
+      if (r.kind === "success" && r.result.image) {
+        const thumb = await makeThumb(r.result.image, 480);
+        await onPatch(c.id, { preview: thumb });
+        next = { state: "ready", image: r.result.image };
+      } else if (r.kind === "success") {
+        next = { state: "simulated" };
+      } else {
+        next = { state: "failed", message: r.kind === "error" ? r.failure.message : "YouCam took too long to render it." };
+      }
+      setPhase((ph) => (ph.at === "done" && ph.checkin.id === c.id ? { ...ph, render: next } : ph));
     } catch (e) {
       const failure = (e as { failure?: ApiFailure }).failure ?? toFailure(e);
       setPhase({ at: "error", photo, failure });
@@ -184,6 +211,38 @@ export default function CheckIn({
             {phase.checkin.simulated && <p className="mono muted">Simulated result, not from YouCam</p>}
           </div>
         </div>
+
+        <div className="jr-dest">
+          <div className="jr-sub">{journey.targetName}, on today&apos;s hair</div>
+          {phase.render.state === "ready" ? (
+            <>
+              <CompareSlider intro before={phase.photo.dataUrl} after={phase.render.image} beforeLabel="Today" afterLabel={journey.targetName} />
+              {dayOne && (
+                <div className="jr-pair" style={{ marginTop: 12 }}>
+                  <figure><img src={dayOne} alt="" /><figcaption>Day 1 render</figcaption></figure>
+                  <figure><img src={phase.render.image} alt="" /><figcaption>Today&apos;s render</figcaption></figure>
+                </div>
+              )}
+              <p className="small muted" style={{ marginTop: 8 }}>The same destination, rendered by YouCam Hairstyle Try-On on your first photo and on today&apos;s.</p>
+            </>
+          ) : phase.render.state === "running" ? (
+            <div className="tryon-render compact" aria-live="polite">
+              <img src={phase.photo.dataUrl} alt="" className="dim" />
+              <div className="scan" aria-hidden />
+              <div className="render-cap">
+                <Mascot mood="think" size={42} />
+                <span>
+                  <b>Rendering {journey.targetName} on today&apos;s photo</b>
+                  <span className="mono">YouCam Hairstyle Try-On · 15–40 s</span>
+                </span>
+              </div>
+            </div>
+          ) : phase.render.state === "simulated" ? (
+            <p className="small muted">Simulated: no YouCam image in mock mode.</p>
+          ) : (
+            <p className="small muted">The destination didn&apos;t render this time ({phase.render.message}). Your measurement is saved.</p>
+          )}
+        </div>
         <div className="dock flat"><button className="cta block" onClick={onClose}>Back to my journey</button></div>
       </section>
     );
@@ -195,13 +254,14 @@ export default function CheckIn({
       <h2 className="display h3 screen-title">How far have you come?</h2>
       <p className="small">
         Take the photo the way you took the first one: face forward, hair down, shoulders in frame, good light. YouCam Hair
-        Length Detection measures it again and the road updates.
+        Length Detection measures it again and the road updates, and YouCam Hairstyle Try-On renders {journey.targetName} on
+        today&apos;s photo so you can see it fitting your hair.
       </p>
       <label className="check consent">
         <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
         <span>
-          Send this photo to YouCam (Perfect Corp.) to measure my length. Only a small copy is kept, on this device. YouCam
-          keeps processed files for up to 30 days.
+          Send this photo to YouCam (Perfect Corp.) to measure my length and render my destination on it. Only small copies
+          are kept, on this device. YouCam keeps processed files for up to 30 days.
         </span>
       </label>
       {note && <Interrupt title="Photo" headline="Use a different photo.">{note}</Interrupt>}
