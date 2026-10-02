@@ -121,6 +121,29 @@ export function planRoute(
     }
   }
 
+  // R7: hair density, only when YouCam's wording clearly says fine or thick. A caution, never a route change.
+  const density = opts.hair?.density;
+  if (density?.grade === "low" && LAYERED.has(target.id)) {
+    cautions.push({
+      rule: "R7_density_fine",
+      text: `Your hair reads as fine (“${density.term}”, YouCam Hair Density Detection). Lots of layers can make fine hair look thinner; ask for fewer, longer layers and fuller ends.`,
+    });
+  } else if (density?.grade === "high" && ONE_LENGTH.has(target.id)) {
+    cautions.push({
+      rule: "R7_density_thick",
+      text: `Your hair reads as thick (“${density.term}”, YouCam Hair Density Detection). A one-length shape can puff out; ask for weight to be taken out from inside, not from the ends.`,
+    });
+  }
+
+  // R8: frizz, only when YouCam clearly says frizz-prone, for looks with a sleek, straight finish.
+  const frizz = opts.hair?.frizz;
+  if (frizz?.grade === "high" && target.textureNeed === "straight") {
+    cautions.push({
+      rule: "R8_frizz",
+      text: `Your hair reads as frizz-prone (“${frizz.term}”, YouCam Hair Frizziness Detection). A sleek finish like this takes smoothing products or heat most days.`,
+    });
+  }
+
   // Preference checks: these never change the route, they surface conflicts to discuss.
   if (route === "length_building" && prefs.growOut === "no") {
     cautions.push({
@@ -279,6 +302,10 @@ function pickAt(
   });
   return candidates[0]?.id;
 }
+
+// Cuts whose shape depends on many layers (fine hair can look thin) and one-length shapes (thick hair can puff out).
+const LAYERED = new Set(["wolf-cut", "face-framing-shag", "wavy-shag", "hush-cut", "short-feather-cut", "choppy-bob", "soft-layered-medium-cut", "c-curl-layers", "medium-curved-layers", "tousled-bob"]);
+const ONE_LENGTH = new Set(["blunt-bob", "short-bob", "classic-straight-lob", "mid-part-bob", "slicked-back-bob", "straight-with-blunt-fringe", "hime-cut", "bob-with-fringe"]);
 
 /** The one name for each route, used on every screen, the document, saved plans and journeys. */
 export const ROUTE_HEADLINES: Record<TransitionRoute["route"], string> = {

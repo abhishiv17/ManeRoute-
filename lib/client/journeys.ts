@@ -74,7 +74,7 @@ export async function journeyFromCard(data: Omit<CardData, "questions" | "note">
   if (data.route.growOut) {
     milestones.push({ id: "grow", kind: "grow", name: "Your hair, grown", band: GROW_BAND[data.route.growOut], image: await thumb(data.growOutImage) });
   }
-  milestones.push({ id: "target", kind: "target", name: data.target.name, band: data.target.targetLengthBand, styleId: data.target.id, image: await thumb(data.targetImage) });
+  milestones.push({ id: "target", kind: "target", name: data.target.name, band: data.target.targetLengthBand, styleId: data.target.id, image: await thumb(data.targetImage, 480) });
 
   const direction = directionOf(startBand, data.target.targetLengthBand);
   return {
@@ -102,6 +102,9 @@ export async function journeyFromCard(data: Omit<CardData, "questions" | "note">
       },
     ],
     texture: data.texture ?? null,
+    hairCheck: data.hairCheck,
+    finish: data.finish?.length ? data.finish : undefined,
+    cutImage: await thumb(data.targetCutImage ?? data.targetImage, 480),
     prefs: data.prefs,
     answers: null,
     // Growing is slow: monthly photos show change; shorter routes are about upkeep.

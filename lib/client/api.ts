@@ -1,4 +1,5 @@
 import type { GrowOutLength, HairBaseline, HairTexture, TaskPoll } from "@/lib/types";
+import type { HairReading } from "@/lib/hairCheck";
 
 // Browser-side calls to ManeRoute's own server routes. The YouCam key never reaches the client.
 
@@ -119,3 +120,29 @@ export const pollExtend = (taskId: string, signal?: AbortSignal) =>
     intervalMs: 3500,
     signal,
   });
+
+// ---------- Finish the look: beard, fringe, colour ----------
+export const startFinish = (kind: "beard" | "bangs" | "color", fileId: string, option: string) =>
+  request<{ taskId: string }>("/api/finish", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ kind, fileId, option }),
+  });
+
+export const pollFinish = (kind: "beard" | "bangs" | "color", taskId: string, signal?: AbortSignal) =>
+  pollTask<{ image: string | null; simulated?: boolean }>(`/api/finish/${kind}/${encodeURIComponent(taskId)}`, {
+    timeoutMs: 180_000,
+    intervalMs: 3000,
+    signal,
+  });
+
+// ---------- Hair checks: density and frizz ----------
+export const startHairCheck = (kind: "density" | "frizz", fileIds: string[]) =>
+  request<{ taskId: string }>("/api/hair-check", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ kind, fileIds }),
+  });
+
+export const pollHairCheck = (kind: "density" | "frizz", taskId: string, signal?: AbortSignal) =>
+  pollTask<HairReading>(`/api/hair-check/${kind}/${encodeURIComponent(taskId)}`, { timeoutMs: 90_000, intervalMs: 2500, signal });

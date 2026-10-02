@@ -2,7 +2,8 @@
 // A journey keeps the milestones from the consultation (now → along the way → grown → target),
 // every check-in (a new photo re-measured by YouCam Hair Length Detection, or a logged cut),
 // and the routine ticks. Everything here is pure, so it is unit-tested and storage-agnostic.
-import type { HairTexture, LengthBand, Preferences, RouteKind } from "./types.ts";
+import type { HairCheck, HairTexture, LengthBand, Preferences, RouteKind } from "./types.ts";
+import type { Finish } from "./addons.ts";
 import type { Direction, RoutineAnswers } from "./routine.ts";
 
 const ORDER: LengthBand[] = ["above_ears", "ear_length", "short", "above_chest", "long"];
@@ -35,6 +36,8 @@ export type CheckIn = {
   milestoneId?: string;
   note?: string;
   simulated?: boolean;
+  /** The destination re-rendered on this check-in's photo (YouCam Hairstyle Try-On), small copy. */
+  preview?: string;
 };
 
 export type Journey = {
@@ -51,6 +54,12 @@ export type Journey = {
   milestones: Milestone[];
   checkins: CheckIn[];
   texture: HairTexture | null;
+  /** YouCam Hair Density / Frizziness readings from the consultation. */
+  hairCheck?: HairCheck;
+  /** Beard, fringe and colour chosen with the destination. */
+  finish?: Finish[];
+  /** The destination haircut alone on day 1, compared with each check-in's re-render. */
+  cutImage?: string;
   prefs: Preferences;
   answers: RoutineAnswers | null;
   checkEveryDays: number;

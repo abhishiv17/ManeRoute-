@@ -1,7 +1,7 @@
 // ManeRoute routine engine: a haircare routine built from plain, ordered rules.
 // Like the route engine, every step records the rule that produced it and a plain-language reason,
 // and nothing is a score or a promise. Products are named as types ("sulfate-free shampoo"), never brands.
-import type { LengthBand, RuleHit, TargetStyle, TextureGroup } from "./types.ts";
+import type { HairCheck, LengthBand, RuleHit, TargetStyle, TextureGroup } from "./types.ts";
 
 export type Cadence = "daily" | "wash" | "weekly" | "monthly" | "phase";
 
@@ -54,6 +54,8 @@ export type RoutineInput = {
   band: LengthBand;
   target: Pick<TargetStyle, "name" | "targetLengthBand" | "maintenance" | "textureNeed" | "home">;
   direction: Direction;
+  /** YouCam Hair Density / Frizziness readings; steps only follow clear grades. */
+  hair?: HairCheck;
 };
 
 export type Routine = {
@@ -289,6 +291,32 @@ export function buildRoutine(input: RoutineInput): Routine {
       detail: "Ask a pharmacist or doctor. ManeRoute doesn't assess scalps.",
       why: { rule: "RT13_scalp", text: "Some flaking needs a treatment a shampoo can't give; that's a question for a professional." },
       track: false,
+    });
+  }
+
+  // RT16: frizz-prone hair, as read by YouCam Hair Frizziness Detection.
+  if (input.hair?.frizz?.grade === "high") {
+    add({
+      id: "frizz",
+      when: "wash",
+      title: "Dry it gently to keep frizz down",
+      detail: "Squeeze water out with a microfibre towel or an old T-shirt instead of rubbing, then smooth a little anti-frizz cream through the damp lengths.",
+      product: "anti-frizz cream or serum",
+      why: { rule: "RT16_frizz", text: `YouCam read your hair as frizz-prone (“${input.hair.frizz.term}”). Rubbing and rough drying lift the outer layer of the hair, which is what frizz is.` },
+      track: true,
+    });
+  }
+
+  // RT17: fine hair, as read by YouCam Hair Density Detection.
+  if (input.hair?.density?.grade === "low") {
+    add({
+      id: "lift",
+      when: "wash",
+      title: "Lift without weight",
+      detail: "Conditioner on the ends only, a little volumising mousse at the roots, and no heavy oils or butters.",
+      product: "volumising mousse",
+      why: { rule: "RT17_density", text: `YouCam read your hair as fine (“${input.hair.density.term}”). Heavy products flatten fine hair and show more scalp.` },
+      track: true,
     });
   }
 

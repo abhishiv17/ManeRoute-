@@ -5,8 +5,12 @@ import {
   type Preferences,
   type TargetStyle,
   type TransitionRoute,
+  type HairCheck,
 } from "@/lib/types";
 import { ROUTE_HEADLINES } from "@/lib/rules";
+import { chairPlan, type ChairStep } from "@/lib/barber";
+import { finishSteps, type Finish } from "@/lib/addons";
+import { getStyle } from "@/lib/catalog";
 
 // Renders the consultation document to a PNG entirely in the browser, in the same editorial
 // language as the app: paper, ink, thin rules, mono labels, condensed display type, one orange signal.
@@ -23,6 +27,12 @@ export type CardData = {
   /** Along-the-way cuts, in order, with their previews on the user's photo. */
   stages: { name: string; image: string | null }[];
   growOutImage?: string | null;
+  /** The haircut alone, before any beard, fringe or colour (the journey compares re-renders with it). */
+  targetCutImage?: string | null;
+  /** Beard, fringe and colour added on top of the cut, in order. */
+  finish?: Finish[];
+  /** YouCam Hair Density / Frizziness readings, when they could be read. */
+  hairCheck?: HairCheck;
   /** Questions as edited by the user on the document screen. */
   questions: string[];
   /** Optional free-text note to the stylist. */
@@ -61,6 +71,13 @@ function wrap(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): st
   return lines;
 }
 
+/** What to ask for, in order, for the document: the next appointment first, the destination last. */
+export function chairFor(d: Pick<CardData, "baseline" | "target" | "route" | "finish">): ChairStep[] {
+  if (d.route.route === "retake_required") return [];
+  const stages = d.route.stageStyleIds.map((id) => getStyle(id)).filter((s): s is TargetStyle => Boolean(s));
+  return [...chairPlan(d.baseline.lengthBand, d.target, stages), ...finishSteps(d.finish ?? [])];
+}
+
 export function baselineText(b: HairBaseline): string {
   return `${LENGTH_BAND_LABELS[b.lengthBand]}${b.atLeast ? " or longer" : ""}`;
 }
@@ -72,7 +89,17 @@ export function cardSummaryText(d: CardData): string {
     `Route: ${ROUTE_HEADLINES[d.route.route]}`,
     `Current length (YouCam Hair Length Detection): ${baselineText(d.baseline)}`,
   ];
+  const chair = chairFor(d);
+  if (chair.length) {
+    lines.push("", "In the chair, ask for:");
+    chair.forEach((c, i) => {
+      lines.push(`${i + 1}. ${c.when}: ${c.title}`, `   "${c.ask}"`);
+      for (const x of c.details) lines.push(`   - ${x}`);
+    });
+  }
   if (d.texture) lines.push(`Texture (YouCam Hair Type Detection): ${d.texture.term}`);
+  if (d.hairCheck?.density) lines.push(`Density (YouCam Hair Density Detection): ${d.hairCheck.density.term}`);
+  if (d.hairCheck?.frizz) lines.push(`Frizz (YouCam Hair Frizziness Detection): ${d.hairCheck.frizz.term}`);
   lines.push("", "What matters:", `- ${GROW[d.prefs.growOut]}`, `- ${CHEM[d.prefs.chemical]}`, `- Daily styling: ${d.prefs.maintenance}`);
   if (d.prefs.keepLength) lines.push("- Keep as much length as possible");
   if (d.prefs.nonNegotiables.trim()) lines.push(`- Please don't: ${d.prefs.nonNegotiables.trim()}`);
@@ -204,6 +231,53 @@ export async function renderCardPng(d: CardData): Promise<Blob> {
   rule(y - 10, 1, C.line);
   y += 30;
   y = col("Route", ROUTE_HEADLINES[d.route.route], PAD, inner, C.routeInk) + 10;
+
+  // In the chair: what to ask for, in order
+  const chair = chairFor(d);
+  if (chair.length) {
+    rule(y, 1, C.line);
+    y += 44;
+    ctx.fillStyle = C.muted;
+    setMono(17, 500);
+    spaced("In the chair, ask for", PAD, y, 3);
+    y += 22;
+    chair.forEach((c, i) => {
+      y += 26;
+      ctx.fillStyle = C.route;
+      ctx.beginPath();
+      ctx.arc(PAD + 13, y - 6, 13, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = C.ink;
+      setMono(15, 800);
+      ctx.textAlign = "center";
+      ctx.fillText(String(i + 1), PAD + 13, y);
+      ctx.textAlign = "left";
+      ctx.fillStyle = C.routeInk;
+      setMono(17, 500);
+      spaced(c.when, PAD + 40, y, 2);
+      y += 44;
+      ctx.fillStyle = C.ink;
+      setDisplay(38);
+      ctx.fillText(c.title.toUpperCase(), PAD + 40, y);
+      y += 44;
+      setSans(28);
+      for (const l of wrap(ctx, `“${c.ask}”`, inner - 40)) {
+        ctx.fillText(l, PAD + 40, y);
+        y += 38;
+      }
+      ctx.fillStyle = C.muted;
+      setSans(24);
+      for (const x of c.details) {
+        const lines = wrap(ctx, `· ${x}`, inner - 60);
+        lines.forEach((l) => {
+          ctx.fillText(l, PAD + 52, y);
+          y += 32;
+        });
+      }
+      y += 10;
+    });
+    y += 6;
+  }
 
   // Checklist sections
   const section = (title: string, rows: string[]) => {
