@@ -196,6 +196,42 @@ export function getHairExtension(taskId: string) {
   return call<RawTaskStatus>(`/s2s/v2.0/task/hair-ext/${encodeURIComponent(taskId)}`);
 }
 
+// ---------- Finish the look: beard, fringe and colour on a try-on result ----------
+// Request shapes checked against the live API on 2 Oct 2026 (the docs host is blocked on our network).
+
+const FINISH_PATHS = { beard: "beard-style", bangs: "hair-bang", color: "hair-color" } as const;
+export type FinishTaskKind = keyof typeof FINISH_PATHS;
+
+export async function startFinishTask(kind: FinishTaskKind, fileId: string, option: { templateId?: string; hex?: string }): Promise<string> {
+  const body =
+    kind === "color"
+      ? { src_file_id: fileId, pattern: { name: "full" }, palettes: [{ color: option.hex }] }
+      : { src_file_id: fileId, template_id: option.templateId };
+  const r = await call<RunResponse>(`/s2s/v2.0/task/${FINISH_PATHS[kind]}`, { method: "POST", body: JSON.stringify(body) });
+  if (!r?.data?.task_id) throw new YouCamError("bad_task_response", "YouCam did not return a task id.");
+  return r.data.task_id;
+}
+
+export function getFinishTask(kind: FinishTaskKind, taskId: string) {
+  return call<RawTaskStatus>(`/s2s/v2.0/task/${FINISH_PATHS[kind]}/${encodeURIComponent(taskId)}`);
+}
+
+// ---------- Hair checks: density (one front photo) and frizz (front, right, left) ----------
+
+const CHECK_PATHS = { density: "hair-density-detection", frizz: "hair-frizziness-detection" } as const;
+export type HairCheckTaskKind = keyof typeof CHECK_PATHS;
+
+export async function startHairCheck(kind: HairCheckTaskKind, fileIds: string[]): Promise<string> {
+  const body = kind === "density" ? { src_file_id: fileIds[0] } : { src_file_ids: fileIds };
+  const r = await call<RunResponse>(`/s2s/v2.0/task/${CHECK_PATHS[kind]}`, { method: "POST", body: JSON.stringify(body) });
+  if (!r?.data?.task_id) throw new YouCamError("bad_task_response", "YouCam did not return a task id.");
+  return r.data.task_id;
+}
+
+export function getHairCheck(kind: HairCheckTaskKind, taskId: string) {
+  return call<RawTaskStatus>(`/s2s/v2.0/task/${CHECK_PATHS[kind]}/${encodeURIComponent(taskId)}`);
+}
+
 export type Template = { id: string; title?: string; thumb?: string; category_name?: string; keep_users_color?: boolean };
 
 export async function listHairTemplates(): Promise<Template[]> {
@@ -222,7 +258,13 @@ export async function fetchResultImage(url: string): Promise<{ bytes: ArrayBuffe
     try {
       const res = await fetch(u, { signal: AbortSignal.timeout(20_000), cache: "no-store" });
       if (!res.ok) throw new YouCamError("result_download_failed", "Could not download the preview image.");
-      return { bytes: await res.arrayBuffer(), type: res.headers.get("content-type") || "image/jpeg" };
+      const bytes = await res.arrayBuffer();
+      // Some results come back as "binary/octet-stream"; read the type from the bytes so the
+      // browser can draw and re-use the image.
+      const h = new Uint8Array(bytes.slice(0, 4));
+      const sniffed = h[0] === 0xff && h[1] === 0xd8 ? "image/jpeg" : h[0] === 0x89 && h[1] === 0x50 ? "image/png" : h[0] === 0x52 && h[1] === 0x49 ? "image/webp" : null;
+      const header = res.headers.get("content-type") || "";
+      return { bytes, type: header.startsWith("image/") ? header : sniffed ?? "image/jpeg" };
     } catch (e) {
       if (i >= 3) throw e instanceof YouCamError ? e : new YouCamError("result_download_failed", "Could not download the preview image.");
       await sleep(600 * i);
