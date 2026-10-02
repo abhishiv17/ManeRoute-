@@ -122,6 +122,14 @@ export type RouteOptions = {
   collection: Collection | "all";
   /** From YouCam Hair Type Detection, when the user did the texture scan. */
   texture?: HairTexture | null;
+  /** From YouCam Hair Density / Hair Frizziness Detection, when they could be read. */
+  hair?: HairCheck;
+};
+
+/** YouCam Hair Density and Hair Frizziness Detection readings (see lib/hairCheck.ts). */
+export type HairCheck = {
+  density?: { term: string; grade: "low" | "medium" | "high" | null } | null;
+  frizz?: { term: string; grade: "low" | "medium" | "high" | null } | null;
 };
 
 /** What the client gets back when polling a task through our server. */
