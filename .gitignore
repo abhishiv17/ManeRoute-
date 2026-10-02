@@ -1,0 +1,13 @@
+node_modules/
+.next/
+out/
+.env*.local
+.env
+*.log
+.tmp-uploads/
+next-env.d.ts
+tests/e2e/shots/
+.next-check/
+.next-mock/
+*.tsbuildinfo
+scripts/missing-thumbs.json
